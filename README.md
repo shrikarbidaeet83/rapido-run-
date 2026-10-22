@@ -130,14 +130,51 @@ npm test
 - **laps:** reversing over the line, skipping checkpoints, and exactly 10 laps to finish.
 - **room:** ready/host/bots rules, frozen start, respawn ghost and cooldown, 15 s reconnect, host handover.
 - **race-sim:** a full 10-lap race with 8 bots on every map, with no sockets and run at full speed. It checks for exactly one winner, a correctly sorted table, correct DNF handling, no NaN, and no car outside the track at any tick.
+- **split hosting:** the static build served from one origin connects to a game server on another (CORS allowed), and a non-allowed origin is refused.
 - **smoke:** Playwright runs 2 browser contexts: create a room, join it by code, race, hold the throttle for 5 s. Both views must see 2 cars moving and there must be no console errors. If no Chromium is available, this test is skipped. Install one with `npx playwright install chromium`.
 
 ## Deploying
 
-The game needs a long-running Node process with WebSockets.
+The game server needs a long-running Node process that keeps WebSockets open.
+**Vercel can't run it.** Its serverless functions are short-lived and can't hold Socket.IO connections.
+So the setup is:
 
-- **Render:** create a *Web Service* with build command `npm install` and start command `npm start`. Render sets `PORT` for you.
-- **Railway:** create a new project from the repo. It detects Node and runs `npm start`, and `PORT` is provided.
-- **Vercel (serverless) won't work:** its functions are short-lived and can't hold Socket.IO connections. Use Render, Railway, Fly.io or any VPS.
+- **Front end** (the page, client JS, shared code): **Vercel**, as static files.
+- **Game server** (`server/`): **Render** (or Railway, Fly.io, any VPS).
 
-All rooms live in memory in a single process. To scale out, you'd need sticky sessions plus a shared room store, which isn't included.
+```
+Browser ──https──▶ your-project.vercel.app      (static page: dist/)
+   └─────wss────▶ tiny-racers-server.onrender.com (Socket.IO game server)
+```
+
+### 1. Game server on Render
+
+1. In Render, go to **New → Blueprint** and pick this repo. It reads [render.yaml](render.yaml).
+   Or create a **Web Service** by hand with build `npm install --omit=dev`, start `npm start` and health check `/health`.
+2. Set the `CORS_ORIGIN` env var to your Vercel URL(s), comma-separated. `*` wildcards are allowed for preview deploys. For example:
+   `https://tiny-racers.vercel.app,https://tiny-racers-*.vercel.app`
+3. Copy the service URL, e.g. `https://tiny-racers-server.onrender.com`. Opening `/health` should return `{"ok":true,...}`.
+
+Free Render services sleep after about 15 minutes idle. The first visitor then waits about 30 s while it wakes up, and the page shows a "Connecting…" message meanwhile. A paid instance stays awake.
+
+### 2. Front end on Vercel
+
+1. Import the repo in Vercel. [vercel.json](vercel.json) already sets everything: no framework, build `node scripts/build-static.js`, output `dist`.
+2. In **Project → Settings → Environment Variables**, add `GAME_SERVER_URL` = your Render URL (no trailing slash).
+3. Deploy. The build copies `public/` and `shared/` into `dist/` and writes `dist/config.js` pointing at the game server.
+
+If you change `GAME_SERVER_URL`, redeploy on Vercel. If your Vercel domain changes, update `CORS_ORIGIN` on Render.
+
+### All-in-one (no Vercel)
+
+`npm start` on Render or Railway serves both the page and the game from one URL. No `CORS_ORIGIN` or `GAME_SERVER_URL` is needed.
+
+### Environment variables
+
+| Where | Variable | Purpose |
+|---|---|---|
+| Game server | `PORT` | port to listen on (hosts set this) |
+| Game server | `CORS_ORIGIN` | front-end origins allowed to connect (comma list, `*` wildcards). Unset = same origin only |
+| Vercel build | `GAME_SERVER_URL` | game server URL written into `config.js` |
+
+All rooms live in memory in one process. Run a single server instance; scaling out would need sticky sessions plus a shared room store.

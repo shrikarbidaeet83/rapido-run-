@@ -21,7 +21,17 @@ export function validateAllMaps() {
   }
 }
 
-export function createGameServer() {
+// CORS_ORIGIN="https://my-game.vercel.app,https://*.vercel.app" lets a front end hosted
+// elsewhere (e.g. Vercel) connect. Unset = same origin only. "*" = anyone.
+export function corsCheck(list) {
+  const patterns = String(list || '').split(',').map((p) => p.trim().replace(/\/$/, '')).filter(Boolean);
+  if (!patterns.length) return false;
+  if (patterns.includes('*')) return true;
+  const regexes = patterns.map((p) => new RegExp('^' + p.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/.]*') + '$'));
+  return (origin, cb) => cb(null, !origin || regexes.some((r) => r.test(origin)));
+}
+
+export function createGameServer({ corsOrigin = process.env.CORS_ORIGIN } = {}) {
   validateAllMaps();
   const app = express();
   app.disable('x-powered-by');
@@ -30,7 +40,20 @@ export function createGameServer() {
   app.get('/health', (_req, res) => res.json({ ok: true, rooms: rooms.size }));
 
   const httpServer = http.createServer(app);
-  const io = new Server(httpServer, { maxHttpBufferSize: 4096, pingInterval: 5000, pingTimeout: 10000 });
+  const origin = corsCheck(corsOrigin);
+  const io = new Server(httpServer, {
+    maxHttpBufferSize: 4096, pingInterval: 5000, pingTimeout: 10000,
+    cors: origin ? { origin, methods: ['GET', 'POST'] } : undefined,
+    // also refuse cross-site WebSocket upgrades that CORS alone would not stop
+    allowRequest: (req, cb) => {
+      const o = req.headers.origin;
+      let sameHost = false;
+      try { sameHost = !!o && new URL(o).host === req.headers.host; } catch { /* malformed Origin */ }
+      if (!o || sameHost || origin === true) return cb(null, true);
+      if (typeof origin === 'function') return origin(o, (err, ok) => cb(null, !!ok));
+      cb(null, false);
+    },
+  });
   const rooms = new Map();
 
   const send = (player, event, data) => {

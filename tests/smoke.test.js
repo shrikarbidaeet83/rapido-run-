@@ -5,7 +5,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import express from 'express';
 import { createGameServer } from '../server/index.js';
+import { buildStatic } from '../scripts/build-static.js';
 
 async function launchChromium() {
   let chromium;
@@ -32,14 +34,9 @@ async function launchChromium() {
   }
 }
 
-test('browser smoke test: create room, join, race, both see 2 moving cars', { timeout: 90000 }, async (t) => {
-  const { browser, skip } = await launchChromium();
-  if (skip) { t.skip(skip); return; }
-  const server = createGameServer();
-  const port = await server.listen(0);
-  const url = `http://localhost:${port}/`;
+async function twoPlayerRace(browser, url, shotPrefix) {
   const errors = [];
-  try {
+  {
     const pages = [];
     for (const name of ['Alice', 'Bob']) {
       const ctx = await browser.newContext({ viewport: { width: 1000, height: 700 } });
@@ -81,8 +78,8 @@ test('browser smoke test: create room, join, race, both see 2 moving cars', { ti
     for (const p of pages) await p.keyboard.up('ArrowUp');
 
     fs.mkdirSync('test-results', { recursive: true });
-    await host.screenshot({ path: 'test-results/smoke-host.png' });
-    await guest.screenshot({ path: 'test-results/smoke-guest.png' });
+    await host.screenshot({ path: `test-results/${shotPrefix}-host.png` });
+    await guest.screenshot({ path: `test-results/${shotPrefix}-guest.png` });
 
     for (let i = 0; i < 2; i++) {
       assert.equal(after[i].cars.length, 2, 'two cars in the race');
@@ -97,8 +94,51 @@ test('browser smoke test: create room, join, race, both see 2 moving cars', { ti
       assert.ok(d < 60, `views agree on car ${c} (${d.toFixed(1)} apart)`);
     }
     assert.deepEqual(errors, [], 'no console errors');
+    for (const p of pages) await p.context().close();
+  }
+}
+
+test('browser smoke test: create room, join, race, both see 2 moving cars', { timeout: 90000 }, async (t) => {
+  const { browser, skip } = await launchChromium();
+  if (skip) { t.skip(skip); return; }
+  const server = createGameServer();
+  const port = await server.listen(0);
+  try {
+    await twoPlayerRace(browser, `http://localhost:${port}/`, 'smoke');
   } finally {
     await browser.close();
     await server.close();
+  }
+});
+
+// Front end on one origin (like Vercel), game server on another (like Render).
+test('split hosting: static front end + separate game server with CORS', { timeout: 90000 }, async (t) => {
+  const { browser, skip } = await launchChromium();
+  if (skip) { t.skip(skip); return; }
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tr-static-'));
+  const web = express().use(express.static(outDir)).listen(0);
+  await new Promise((r) => web.once('listening', r));
+  const webUrl = `http://localhost:${web.address().port}`;
+  const server = createGameServer({ corsOrigin: webUrl });
+  const port = await server.listen(0);
+  const blocked = createGameServer({ corsOrigin: 'https://somewhere-else.example' });
+  const blockedPort = await blocked.listen(0);
+  try {
+    buildStatic(outDir, `http://127.0.0.1:${port}`);
+    await twoPlayerRace(browser, `${webUrl}/`, 'split');
+
+    // an origin that is not allowed cannot connect
+    buildStatic(outDir, `http://127.0.0.1:${blockedPort}`);
+    const page = await browser.newPage();
+    await page.goto(`${webUrl}/`);
+    await page.waitForFunction(() => /Connecting to the game server/.test(document.getElementById('home-error').textContent), null, { timeout: 15000 });
+    assert.equal(blocked.io.engine.clientsCount, 0);
+    await page.close();
+  } finally {
+    await browser.close();
+    await server.close();
+    await blocked.close();
+    web.close();
+    fs.rmSync(outDir, { recursive: true, force: true });
   }
 });

@@ -28,8 +28,32 @@ const prefs = {
   color: store.get('tr-color', CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)]),
 };
 
+// ---------- server connection ----------
+// The Socket.IO client comes from the game server itself, so versions always match,
+// and the page can be hosted somewhere else (see config.js).
+const SERVER = String(window.TINY_RACERS_SERVER || '').replace(/\/+$/, '');
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error(`failed to load ${src}`));
+    document.head.append(s);
+  });
+}
+
+try {
+  if (!window.io) await loadScript(`${SERVER}/socket.io/socket.io.js`);
+} catch {
+  document.getElementById('home-error').textContent = 'Cannot reach the game server. Try again in a minute.';
+  throw new Error(`game server unreachable: ${SERVER || location.origin}`);
+}
+
 // ---------- state ----------
-const socket = window.io({ transports: ['websocket', 'polling'] });
+const socket = SERVER
+  ? window.io(SERVER, { transports: ['websocket', 'polling'] })
+  : window.io({ transports: ['websocket', 'polling'] });
 let room = null;        // latest room info from the server
 let roomCode = null;
 let game = null;        // current race (client side)
@@ -266,6 +290,10 @@ socket.on('connect', () => {
   banner('', 0);
 });
 socket.on('disconnect', () => { if (game) banner('Reconnecting…', 60000); });
+socket.on('connect_error', () => {
+  if (!roomCode) setError('home-error', 'Connecting to the game server… (a sleeping free server can take ~30 s to wake up)');
+});
+socket.on('connect', () => { if (!roomCode) setError('home-error', ''); });
 
 socket.on('room', (info) => {
   room = info;

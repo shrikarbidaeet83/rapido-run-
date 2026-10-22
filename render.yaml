@@ -1,0 +1,15 @@
+# Render blueprint for the game server (Socket.IO needs a long-running process).
+services:
+  - type: web
+    name: tiny-racers-server
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # Your Vercel front-end URL(s), comma separated. Wildcards allowed for preview deploys.
+      - key: CORS_ORIGIN
+        value: https://YOUR-PROJECT.vercel.app,https://YOUR-PROJECT-*.vercel.app
