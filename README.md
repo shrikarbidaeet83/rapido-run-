@@ -1,6 +1,6 @@
 # Tiny Racers
 
-8-player online, top-down 2D car racing in the browser. Cars look and handle like [car.js.org](https://car.js.org/): tiny 8×16 flat rectangles with an arcade, slightly floaty, momentum-based feel. The game adds a lobby, 6 tracks, walls, kerbs, 10-lap races, car-to-car collisions, AI bots and a scoreboard.
+8-player online, top-down 2D car racing in the browser. Cars look and handle like [car.js.org](https://car.js.org/): tiny 8×16 flat rectangles with an arcade, slightly floaty, momentum-based feel. The game adds a lobby, 6 compact tracks, walls, 10-lap races, drift-charged boost, car-to-car collisions, AI bots and a scoreboard.
 
 - **Server:** Node.js 20+, Express, Socket.IO 4. The server is authoritative for physics, collisions, laps and results.
 - **Client:** vanilla ES modules and HTML5 Canvas 2D, with no framework and no build step.
@@ -23,6 +23,7 @@ To play with friends: share the room code or the **Copy link** URL (`?room=ABCD`
 | Throttle | ↑ / W | GAS (right) | RT / A |
 | Brake / reverse | ↓ / S | BRAKE (right) | LT / B |
 | Steer | ← → / A D | ◀ ▶ (left) | Left stick / D-pad |
+| Boost (when the meter is 100%) | Space / Shift | BOOST (right) | X / RB |
 | Respawn at last checkpoint | R | Respawn button | Y |
 | Menu (the race keeps running) | Esc | ☰ | |
 | Mute (saved) | M | Menu → Mute | |
@@ -33,6 +34,7 @@ All inputs are released when the window loses focus.
 
 ## Race rules
 
+- **Boost:** the meter fills slowly while you drive (about 14 s) and much faster while you drift, i.e. slide sideways through corners (about 2.5 s of drifting). At 100%, press boost for 1.5 s of extra power (1.6× top power).
 - 10 laps. There are 16 checkpoints per lap, and checkpoint 0 is the finish line. Progress only counts when you cross the **next** checkpoint going forwards, so shortcuts and reversing over the line don't count.
 - Start: cars are frozen on a staggered 2×4 grid while 5 red lights count down 3-2-1. When they go out, it's GO.
 - After the winner finishes, everyone else has 30 s. Cars still racing after that are **DNF**, ordered by progress.
@@ -49,7 +51,7 @@ server/index.js      Express + Socket.IO, room manager, rate limiting
 server/room.js       Room: lobby, race state machine, fixed-step loop, results
 server/bot.js        AI driver
 shared/constants.js  every tunable number
-shared/physics.js    car step (pure, deterministic) + kerbs + wall constraint
+shared/physics.js    car step (pure, deterministic) + edge zone + boost + wall constraint
 shared/collision.js  OBB vs OBB (SAT) + impulse response
 shared/track.js      spline, nearest point, checkpoints, grid, validation
 shared/maps.js       the 6 tracks
@@ -61,9 +63,9 @@ tests/               node --test suites (+ Playwright browser smoke test)
 ## Networking model
 
 - The server runs physics at a fixed **60 Hz**, paced by an accumulator rather than trusting timer intervals. It broadcasts compact array snapshots at **20 Hz**.
-- Clients send only `[inputBits, seq]`, both when input changes and every 100 ms. Positions from clients are never accepted.
-- **Your own car** uses client-side prediction with the same shared physics. Each snapshot is reconciled by replaying un-acknowledged inputs on top of the server state. An error over 30 units snaps; anything smaller is blended out over about 100 ms.
-- **Other cars** are interpolated between snapshots, about 100 ms in the past.
+- Clients send only `[firstTick, [inputBits…]]`. Positions from clients are never accepted.
+- **Your own car** uses client-side prediction with the same shared physics. The client numbers every physics tick and sends the input for each one (batched once per frame). The server buffers them (a small jitter buffer) and applies exactly one per server tick. It then reports the last tick it applied, along with your car's full-precision state. The client replays exactly the ticks after that one, so prediction and server agree to within 1e-6 units: no rubber-banding. Only collisions with other cars cause visible corrections, and those are blended out in about 100 ms.
+- **Other cars** are interpolated between snapshots about 120 ms in the past, using a jitter-resistant clock estimate. If a packet is late, they are briefly extrapolated instead of freezing.
 - Each socket is limited to 60 messages per second. Player names are sanitised on the server and only ever drawn with `fillText` / `textContent`.
 
 ## Tunable constants (`shared/constants.js`)
@@ -77,7 +79,11 @@ tests/               node --test suites (+ Playwright browser smoke test)
 | `PHYSICS.drag` | 0.95 | velocity kept per tick (lower = grippier) |
 | `PHYSICS.angularDrag` | 0.95 | spin kept per tick |
 | `PHYSICS.turnSpeed` | 0.002 | steering per tick |
-| `KERB_WIDTH` / `KERB_DRAG` / `KERB_POWER_CAP` | 10 / 0.985 / 0.8 | kerb width, extra drag, power cap |
+| `KERB_WIDTH` / `KERB_DRAG` / `KERB_POWER_CAP` | 10 / 0.985 / 0.8 | slow edge zone outside the white edge line: width, extra drag, power cap |
+| `BOOST.fillNormal` / `BOOST.fillDrift` | 1/840, 1/150 per tick | meter fill: driving / drifting |
+| `BOOST.driftSlip` | 0.35 | sideways speed that counts as drifting |
+| `BOOST.durationTicks` / `BOOST.powerMult` | 90 / 1.6 | boost length and power |
+| `INPUT_JITTER_TICKS` / `INPUT_QUEUE_MAX` | 3 / 20 | server input buffer |
 | `WALL_RESTITUTION` / `WALL_FRICTION` / `WALL_SPIN` | 0.3 / 0.8 / 0.004 | wall bounce, scrape loss, spin |
 | `CAR_RESTITUTION` / `CAR_FRICTION` / `CAR_SPIN` | 0.4 / 0.1 / 0.012 | car-to-car bounce, friction, spin kick |
 | `LAPS`, `CHECKPOINTS` | 10, 16 | race length, checkpoints per lap |
@@ -85,9 +91,9 @@ tests/               node --test suites (+ Playwright browser smoke test)
 | `RESPAWN_GHOST_MS`, `RESPAWN_COOLDOWN_MS` | 1500, 3000 | |
 | `WRONG_WAY_ANGLE`, `WRONG_WAY_MS` | 120°, 1000 | |
 | `TICK_RATE`, `SNAPSHOT_RATE` | 60, 20 | |
-| `INTERP_DELAY_MS`, `SNAP_DISTANCE` | 100, 30 | |
-| `RECONNECT_GRACE_MS`, `RATE_LIMIT_PER_SEC` | 15000, 60 | |
-| `ZOOM_DEFAULT` / `ZOOM_MIN` / `ZOOM_MAX` | 2.5 / 1 / 4 | camera |
+| `INTERP_DELAY_MS`, `SNAP_DISTANCE` | 120, 30 | |
+| `RECONNECT_GRACE_MS`, `RATE_LIMIT_PER_SEC` | 15000, 120 | |
+| `ZOOM_DEFAULT` / `ZOOM_MIN` / `ZOOM_MAX` | 2.5 / 0.8 / 4 | camera (phones start zoomed out further) |
 | `MAX_PARTICLES`, `MAX_SKIDS` | 300, 400 | effect pools |
 
 ## Adding a map
@@ -98,16 +104,17 @@ Add an entry to `MAPS` in `shared/maps.js`:
 {
   id: 'my-track', name: 'My Track', difficulty: 'Medium', width: 80, theme: THEMES.grass,
   points: [
-    [1200, 220, 0],     // [x, y, cornerRadius]: first point = start/finish line, put it mid-straight (radius 0)
-    [2100, 220, 200],   // corner: rounded with a 200-unit radius
-    [2100, 1350, 200],
-    [300, 1350, 200],
-    [300, 220, 200],
+    [500, 110, 0],      // [x, y, cornerRadius]: first point = start/finish line, put it mid-straight (radius 0)
+    [1000, 110, 150],   // corner: rounded with a 150-unit radius
+    [1000, 600, 150],
+    [120, 600, 150],
+    [120, 110, 150],
   ],
 }
 ```
 
-- The world is 2400 × 1600 units, and the car is 8 × 16.
+- The car is 8 × 16 units. Current tracks are about 1000 × 700 with widths of 95–120 and laps of 2,000–3,500 units (about 20–40 s). The world size is computed from the track automatically.
+- Keep the first point at least `width / 2 + 20` from the top and left edges.
 - The track runs through the points in order and closes back to the first one. Every corner becomes a circular arc of the given radius, and the result is smoothed with a centripetal Catmull-Rom spline sampled every 4 units.
 - A hairpin is two 90° corners close together, for example `[700, 300, 62], [700, 500, 62]`.
 - Run `npm run validate`. The server also refuses to start with an invalid map. The checks are:
@@ -123,12 +130,14 @@ Add an entry to `MAPS` in `shared/maps.js`:
 npm test
 ```
 
-- **physics:** same inputs give the same state after 600 ticks; kerbs are slower than asphalt.
+- **physics:** same inputs give the same state after 600 ticks; the edge zone is slower than asphalt.
 - **maps:** all 6 maps pass validation; grid slots are on track and face forwards.
 - **walls:** 1000 random full-speed (and over-speed) wall hits per map, and no corner ever leaves the track.
 - **collision:** SAT and impulses; 300 random high-speed crashes per map leave no overlap and no car off the track.
 - **laps:** reversing over the line, skipping checkpoints, and exactly 10 laps to finish.
-- **room:** ready/host/bots rules, frozen start, respawn ghost and cooldown, 15 s reconnect, host handover.
+- **room:** ready/host/bots rules, frozen start, respawn ghost and cooldown, 15 s reconnect, host handover, input queue rules.
+- **netcode:** a simulated client with latency and jitter predicts its own car; prediction must match the server exactly (< 1e-6).
+- **boost:** fills faster when drifting, only fires at 100%, faster for 1.5 s, then back to normal.
 - **race-sim:** a full 10-lap race with 8 bots on every map, with no sockets and run at full speed. It checks for exactly one winner, a correctly sorted table, correct DNF handling, no NaN, and no car outside the track at any tick.
 - **split hosting:** the static build served from one origin connects to a game server on another (CORS allowed), and a non-allowed origin is refused.
 - **smoke:** Playwright runs 2 browser contexts: create a room, join it by code, race, hold the throttle for 5 s. Both views must see 2 cars moving and there must be no console errors. If no Chromium is available, this test is skipped. Install one with `npx playwright install chromium`.

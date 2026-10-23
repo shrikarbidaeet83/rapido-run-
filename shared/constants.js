@@ -23,8 +23,20 @@ export const PHYSICS = {
   turnSpeed: 0.002,
 };
 
+// Boost: the meter fills slowly while driving and fast while drifting.
+// At 100% the boost key fires it: more power for a short burst.
+export const BOOST = {
+  fillNormal: 1 / (14 * 60),   // ~14 s of normal driving to fill
+  fillDrift: 1 / (2.5 * 60),   // ~2.5 s of drifting to fill
+  driftSlip: 0.35,             // sideways speed (units/tick) that counts as drifting
+  minSpeed: 0.3,               // no filling when (almost) standing still
+  durationTicks: 90,           // 1.5 s of boost
+  powerMult: 1.6,              // max power while boosting
+  accel: 3,                    // throttle builds up this much faster while boosting
+};
+
 // Track surfaces
-export const KERB_WIDTH = 10;
+export const KERB_WIDTH = 10;                // slow "edge" zone inside the edge line
 export const KERB_DRAG = 0.985;              // extra velocity multiplier per tick on a kerb
 export const KERB_POWER_CAP = 0.8;           // fraction of maxPower allowed on a kerb
 export const SAMPLE_SPACING = 4;             // centerline sample spacing (world units)
@@ -58,12 +70,13 @@ export const MAX_PLAYERS = 8;
 export const NAME_MAX = 12;
 export const ROOM_CODE_LEN = 4;
 export const RECONNECT_GRACE_MS = 15000;
-export const INPUT_HEARTBEAT_MS = 100;
-export const INTERP_DELAY_MS = 100;
+export const INPUT_QUEUE_MAX = 20;          // server-side buffered input ticks per player
+export const INPUT_JITTER_TICKS = 3;          // inputs buffered after running dry (absorbs network jitter)
+export const INPUT_IDLE_TICKS = 30;          // no input for this long → treat as released
+export const INTERP_DELAY_MS = 120;
 export const SNAP_DISTANCE = 30;             // reconcile error above this snaps instead of blends
-export const RATE_LIMIT_PER_SEC = 60;        // socket messages per second per client
-export const WORLD_WIDTH = 2400;
-export const WORLD_HEIGHT = 1600;
+export const RATE_LIMIT_PER_SEC = 120;       // socket messages per second per client (inputs go out every frame)
+export const WORLD_MARGIN = 60;             // grass around the track (world size is per map)
 
 export const CAR_COLORS = [
   '#e53935', '#1e88e5', '#43a047', '#fdd835',
@@ -72,7 +85,7 @@ export const CAR_COLORS = [
 
 // Camera / rendering
 export const ZOOM_DEFAULT = 2.5;
-export const ZOOM_MIN = 1;
+export const ZOOM_MIN = 0.8;
 export const ZOOM_MAX = 4;
 export const MAX_PARTICLES = 300;
 export const MAX_SKIDS = 400;

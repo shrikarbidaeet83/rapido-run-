@@ -152,7 +152,7 @@ export function createGameServer({ corsOrigin = process.env.CORS_ORIGIN } = {}) 
       },
       lobby() { ctx()?.backToLobby(socket.data.playerId); },
       input(msg) {
-        if (Array.isArray(msg)) ctx()?.setInput(socket.data.playerId, msg[0], msg[1]);
+        if (Array.isArray(msg)) ctx()?.queueInputs(socket.data.playerId, msg[0], msg[1]);
       },
       respawn() { ctx()?.requestRespawn(socket.data.playerId); },
       latency(_msg, cb) { cb(Date.now()); },

@@ -37,30 +37,20 @@ export function prerenderTrack(track, scale) {
     for (let x = (y / T) % 2 ? T : 0; x < track.worldWidth; x += 2 * T) g.fillRect(x, y, T, T);
   }
 
+  // minimal look: plain asphalt with a single thin edge line on each side
+  // (the line marks where the slower edge zone starts; the asphalt ends at the wall)
   g.lineJoin = 'round';
   g.lineCap = 'round';
   tracePath(g, track);
-  // wall
-  g.strokeStyle = th.wall;
-  g.lineWidth = track.width + 8;
-  g.stroke();
-  // kerbs: white band with red dashes on top
-  g.strokeStyle = '#ffffff';
+  g.strokeStyle = th.asphalt;
   g.lineWidth = track.width;
   g.stroke();
-  g.setLineDash([10, 10]);
-  g.strokeStyle = '#d32f2f';
-  g.lineCap = 'butt';
-  g.stroke();
-  g.setLineDash([]);
-  g.lineCap = 'round';
-  // white edge line, then asphalt
-  const inner = track.width - 2 * track.kerbWidth;
+  const inner = track.width - 2 * track.kerbWidth, lw = 1.2;
   g.strokeStyle = th.line;
-  g.lineWidth = inner + 3;
+  g.lineWidth = inner + 2 * lw;
   g.stroke();
   g.strokeStyle = th.asphalt;
-  g.lineWidth = inner - 1;
+  g.lineWidth = inner;
   g.stroke();
 
   // grid boxes
@@ -103,11 +93,8 @@ export function drawThumbnail(canvas, map) {
   g.fillRect(0, 0, canvas.width, canvas.height);
   g.lineJoin = 'round';
   tracePath(g, track, k);
-  g.strokeStyle = map.theme.wall;
-  g.lineWidth = Math.max(3, (track.width + 8) * k);
-  g.stroke();
   g.strokeStyle = map.theme.asphalt;
-  g.lineWidth = Math.max(2, track.width * k * 0.8);
+  g.lineWidth = Math.max(3, track.width * k);
   g.stroke();
   const cp = track.checkpoints[0];
   g.fillStyle = '#fff';
@@ -124,7 +111,7 @@ export class Renderer {
     this.track = null;
     this.trackImg = null;
     this.scale = 1;
-    this.zoom = ZOOM_DEFAULT;
+    this.zoom = this.defaultZoom();
     this.cam = { x: 0, y: 0, init: false };
     this.shake = 0;
     this.particles = Array.from({ length: MAX_PARTICLES }, () => ({ life: 0 }));
@@ -143,7 +130,7 @@ export class Renderer {
     this.skids.length = 0;
     for (const p of this.particles) p.life = 0;
     this.cam.init = false;
-    this.zoom = ZOOM_DEFAULT;
+    this.zoom = this.defaultZoom();
     this.minimapScale = Math.min((this.minimap.width - 12) / track.worldWidth, (this.minimap.height - 12) / track.worldHeight);
   }
 
@@ -160,6 +147,12 @@ export class Renderer {
     this.canvas.width = Math.round(w * this.dpr);
     this.canvas.height = Math.round(h * this.dpr);
     this.w = w; this.h = h;
+  }
+
+  // small screens (phones) zoom out so you can see the road ahead
+  defaultZoom() {
+    const short = Math.min(window.innerWidth, window.innerHeight);
+    return ZOOM_DEFAULT * Math.max(0.55, Math.min(1, short / 700));
   }
 
   zoomBy(factor) {
@@ -179,6 +172,23 @@ export class Renderer {
       p.max = p.life = kind === 'spark' ? 18 + Math.random() * 14 : 30 + Math.random() * 20;
       p.kind = kind;
       p.size = kind === 'spark' ? 0.9 : 1.5 + Math.random() * 1.5;
+    }
+  }
+
+  // boost flame out of the back of the car
+  flame(car) {
+    const fx = Math.sin(car.angle), fy = -Math.cos(car.angle);
+    for (let i = 0; i < 2; i++) {
+      const p = this.particles[this.pIndex];
+      this.pIndex = (this.pIndex + 1) % this.particles.length;
+      const side = (Math.random() - 0.5) * 5;
+      p.x = car.x - fx * (CAR_LENGTH / 2 + 1) + Math.cos(car.angle) * side;
+      p.y = car.y - fy * (CAR_LENGTH / 2 + 1) + Math.sin(car.angle) * side;
+      p.vx = -fx * (0.6 + Math.random() * 0.6) + car.vx * 0.5;
+      p.vy = -fy * (0.6 + Math.random() * 0.6) + car.vy * 0.5;
+      p.max = p.life = 10 + Math.random() * 8;
+      p.kind = 'flame';
+      p.size = 1.6 + Math.random() * 1.4;
     }
   }
 
@@ -269,20 +279,22 @@ export class Renderer {
       p.x += p.vx * dtk; p.y += p.vy * dtk;
       p.vx *= 0.94; p.vy *= 0.94;
       const a = Math.max(0, p.life / p.max);
-      ctx.fillStyle = p.kind === 'spark' ? `rgba(255,${180 + Math.floor(60 * a)},60,${a})` : `rgba(170,150,120,${a * 0.5})`;
+      ctx.fillStyle = p.kind === 'spark' ? `rgba(255,${180 + Math.floor(60 * a)},60,${a})`
+        : p.kind === 'flame' ? `rgba(${120 + Math.floor(135 * a)},${180 + Math.floor(70 * a)},255,${a * 0.9})`
+          : `rgba(170,150,120,${a * 0.5})`;
       ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
     }
 
     // name labels in screen space (not rotated)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.font = '11px -apple-system, Segoe UI, Roboto, sans-serif';
     ctx.textAlign = 'center';
     for (const car of frame.cars) {
       if (car.removed) continue;
       const sx = (car.x - cx) * z + this.w / 2, sy = (car.y - cy) * z + this.h / 2 - 12 * z - 4;
       if (sx < -50 || sy < -20 || sx > this.w + 50 || sy > this.h + 30) continue;
       ctx.globalAlpha = car.ghost ? 0.5 : 1;
-      ctx.font = car.me ? 'bold 11px -apple-system, Segoe UI, Roboto, sans-serif' : '11px -apple-system, Segoe UI, Roboto, sans-serif';
+      const px = this.w < 760 ? 9 : 11;
+      ctx.font = `${car.me ? 'bold ' : ''}${px}px -apple-system, Segoe UI, Roboto, sans-serif`;
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(255,255,255,0.75)';
       ctx.strokeText(car.name, sx, sy);

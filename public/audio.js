@@ -77,6 +77,23 @@ export const audio = {
     src.stop(t + 0.35);
   },
 
+  boost() {
+    if (!ctx || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.setValueAtTime(400, t);
+    f.frequency.exponentialRampToValueAtTime(2400, t + 0.35);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    src.connect(f); f.connect(g); g.connect(master);
+    src.start(t);
+    src.stop(t + 0.4);
+  },
+
   beep(high = false) {
     if (!ctx || ctx.state !== 'running') return;
     const t = ctx.currentTime;

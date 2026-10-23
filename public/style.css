@@ -88,15 +88,25 @@ tr.me td { outline: 1px solid #bbb; }
 #canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 #hud { position: absolute; inset: 0; pointer-events: none; user-select: none; -webkit-user-select: none; }
 #hud button { pointer-events: auto; }
-#hud-main { position: absolute; left: 10px; top: 10px; background: rgba(247,247,247,.88); border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px; min-width: 150px; }
+#hud-left, #hud-right { position: absolute; top: 10px; display: flex; flex-direction: column; gap: 6px; }
+#hud-left { left: 10px; align-items: flex-start; }
+#hud-right { right: 10px; align-items: flex-end; }
+#hud-main { background: rgba(247,247,247,.88); border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px; min-width: 150px; }
 #hud-pos { font-size: 22px; font-weight: 700; line-height: 1.1; }
 #hud-lap { font-size: 13px; margin-bottom: 4px; }
 .hud-row { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--muted); }
 .hud-row b { color: var(--text); font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 500; }
 #speedbar { height: 5px; background: #ddd; margin-top: 6px; border-radius: 3px; overflow: hidden; }
 #speedfill { height: 100%; width: 0; background: #222; }
+#boost { margin-top: 6px; }
+#boostbar { height: 7px; background: #ddd; margin-top: 2px; border-radius: 4px; overflow: hidden; }
+#boostfill { height: 100%; width: 0; background: #1e88e5; }
+#boost.ready #boostfill { background: #00b0ff; animation: glow .5s ease-in-out infinite alternate; }
+#boost.ready #boost-label { color: #0277bd; font-weight: 700; }
+#boost.active #boostfill { background: #ff9100; }
+@keyframes glow { to { opacity: .55; } }
 
-#board { position: absolute; right: 10px; top: 10px; margin: 0; padding: 6px 8px; list-style: none; background: rgba(247,247,247,.88); border: 1px solid var(--line); border-radius: 5px; font-size: 11px; min-width: 170px; }
+#board { margin: 0; padding: 6px 8px; list-style: none; background: rgba(247,247,247,.88); border: 1px solid var(--line); border-radius: 5px; font-size: 11px; min-width: 170px; }
 #board li { display: flex; gap: 6px; align-items: center; padding: 1px 0; }
 #board li.me { font-weight: 700; }
 #board li.out { opacity: .45; }
@@ -104,7 +114,7 @@ tr.me td { outline: 1px solid #bbb; }
 #board .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 90px; }
 #board .g { color: var(--muted); font-family: ui-monospace, Menlo, Consolas, monospace; }
 
-#minimap { position: absolute; right: 10px; bottom: 10px; background: rgba(247,247,247,.8); border: 1px solid var(--line); border-radius: 5px; }
+#minimap { display: block; width: 180px; height: 120px; background: rgba(247,247,247,.8); border: 1px solid var(--line); border-radius: 5px; }
 
 #lights { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); display: none; gap: 8px; background: #222; padding: 10px 12px 26px; border-radius: 6px; }
 #lights.show { display: flex; }
@@ -118,18 +128,54 @@ tr.me td { outline: 1px solid #bbb; }
 @keyframes blink { 50% { opacity: .35; } }
 #stats { position: absolute; left: 10px; bottom: 10px; font: 11px ui-monospace, Menlo, Consolas, monospace; color: #333; background: rgba(255,255,255,.7); padding: 2px 5px; border-radius: 3px; display: none; }
 #stats.show { display: block; }
-#btn-respawn { position: absolute; left: 10px; top: 180px; }
 #btn-menu { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); }
 
 #touch { display: none; position: absolute; left: 0; right: 0; bottom: 0; height: 120px; pointer-events: none; touch-action: none; }
 body.touch #touch { display: block; }
-body.touch #minimap { bottom: 140px; }
-body.touch #stats { bottom: 140px; }
-#touch .tgroup { position: absolute; bottom: 14px; display: flex; gap: 12px; pointer-events: auto; }
+body.touch #stats { bottom: 130px; }
+#touch .tgroup { position: absolute; bottom: 14px; display: flex; gap: 12px; pointer-events: auto; align-items: flex-end; }
 #touch .left { left: 14px; }
 #touch .right { right: 14px; }
 #touch button { width: 76px; height: 76px; border-radius: 50%; background: rgba(255,255,255,.55); border: 2px solid rgba(0,0,0,.25); font-size: 18px; font-weight: 700; touch-action: none; -webkit-user-select: none; user-select: none; }
+#touch button.boost { width: 60px; height: 60px; font-size: 11px; margin-bottom: 40px; border-color: #1e88e5; color: #0d47a1; }
 #touch button.held { background: rgba(0,0,0,.35); color: #fff; }
+
+/* phones / small windows: compact HUD so nothing overlaps */
+@media (max-width: 760px), (max-height: 520px) {
+  #hud-left, #hud-right { top: 6px; gap: 4px; }
+  #hud-left { left: 6px; }
+  #hud-right { right: 6px; }
+  #hud-main { min-width: 0; width: 112px; padding: 4px 6px; }
+  #hud-pos { font-size: 16px; }
+  #hud-lap { font-size: 11px; margin-bottom: 2px; }
+  .hud-row { font-size: 9.5px; gap: 4px; }
+  #speedbar { height: 4px; margin-top: 3px; }
+  #boost { margin-top: 3px; }
+  #boostbar { height: 5px; }
+  #board { min-width: 0; width: 124px; padding: 3px 5px; font-size: 9.5px; }
+  #board li { gap: 4px; padding: 0; }
+  #board .p { width: 10px; }
+  #board .n { max-width: 56px; }
+  #board .dot { width: 7px; height: 7px; }
+  #minimap { width: 124px; height: 83px; }
+  #btn-menu { top: 6px; }
+  #lights { top: 22%; padding: 6px 8px 20px; gap: 5px; }
+  #lights i { width: 16px; height: 16px; }
+  #count { font-size: 12px; bottom: 2px; }
+  #banner { font-size: 20px; top: 34%; }
+  #wrongway { font-size: 22px; padding: 4px 10px; }
+  #touch { height: 96px; }
+  #touch .tgroup { bottom: 10px; gap: 8px; }
+  #touch .left { left: 10px; }
+  #touch .right { right: 10px; }
+  #touch button { width: 58px; height: 58px; font-size: 13px; }
+  #touch button.boost { width: 48px; height: 48px; font-size: 9px; margin-bottom: 30px; }
+}
+/* very short landscape screens: only top 5 (and you) on the board */
+@media (max-height: 430px) {
+  #board li:nth-child(n+7):not(.me) { display: none; }
+  #minimap { width: 100px; height: 67px; }
+}
 
 .overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,.3); align-items: center; justify-content: center; }
 .overlay.show { display: flex; }

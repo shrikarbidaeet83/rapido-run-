@@ -1,7 +1,7 @@
 // Screens, networking, client-side prediction + interpolation, HUD.
 
 import {
-  TICK_MS, LAPS, CHECKPOINTS, CAR_COLORS, INTERP_DELAY_MS, INPUT_HEARTBEAT_MS, SNAP_DISTANCE,
+  TICK_MS, LAPS, CHECKPOINTS, CAR_COLORS, INTERP_DELAY_MS, SNAP_DISTANCE, BOOST,
   PHYSICS, NAME_MAX,
 } from '/shared/constants.js';
 import { MAPS, getMap } from '/shared/maps.js';
@@ -58,7 +58,6 @@ let room = null;        // latest room info from the server
 let roomCode = null;
 let game = null;        // current race (client side)
 let results = null;
-let seqCounter = 0;
 let ping = 0;
 let showStats = false;
 let paused = false;
@@ -335,8 +334,8 @@ function startGame(info) {
       return { ...c, x: slot.x, y: slot.y, angle: slot.angle, vx: 0, vy: 0, flags: 0, cpPassed: 0,
         lapStart: info.goTick, best: 0, finishMs: 0, cpTimes: [], removed: false, me: c.index === info.you };
     }),
-    snaps: [], clockOffset: null, pred: null, history: [], offset: { x: 0, y: 0, a: 0 },
-    lastBits: -1, lastSent: 0, acc: 0, order: info.cars.map((c) => c.index), grace: -1,
+    snaps: [], offsets: [], clockOffset: null, pred: null, history: [], offset: { x: 0, y: 0, a: 0 },
+    localTick: 0, pending: [], pendingStart: 0, tickDelta: null, acc: 0, order: info.cars.map((c) => c.index), grace: -1,
     lastCount: null, goShown: false, winnerShown: false, hudAt: 0,
   };
   if (game.you >= 0) {
@@ -346,6 +345,7 @@ function startGame(info) {
   renderer.setTrack(track);
   input.releaseAll();
   $('btn-respawn').style.display = game.you >= 0 ? '' : 'none';
+  $('boost').style.display = game.you >= 0 ? '' : 'none';
   show('game');
   banner(game.you >= 0 ? '' : 'Spectating', 3000);
 }
@@ -363,16 +363,25 @@ function serverTick() {
   return game.clockOffset == null ? 0 : (performance.now() + game.clockOffset) / TICK_MS;
 }
 
-function unpack(c) {
-  return { x: c[0], y: c[1], angle: c[2], xVelocity: c[3], yVelocity: c[4], power: c[5], reverse: c[6], angularVelocity: c[7], seg: c[13], onKerb: !!(c[8] & 2) };
+// own car, full precision: [x, y, angle, vx, vy, power, reverse, angularVelocity, boost, boostTicks, seg]
+function unpackOwn(m) {
+  return {
+    x: m[0], y: m[1], angle: m[2], xVelocity: m[3], yVelocity: m[4], power: m[5], reverse: m[6],
+    angularVelocity: m[7], boost: m[8], boostTicks: m[9], seg: m[10], onKerb: false, drifting: false,
+  };
 }
 
 function onSnapshot(snap) {
   if (!game) return;
   const now = performance.now();
-  const target = snap.t * TICK_MS - now;
-  if (game.clockOffset == null || Math.abs(target - game.clockOffset) > 250) game.clockOffset = target;
-  else game.clockOffset += (target - game.clockOffset) * 0.08;
+  // Server clock estimate. Packets arrive with varying delay; the least-delayed
+  // recent one (largest offset) is the best estimate, and we glide toward it so
+  // the interpolation timeline never jumps.
+  game.offsets.push(snap.t * TICK_MS - now);
+  if (game.offsets.length > 40) game.offsets.shift();
+  const best = Math.max(...game.offsets);
+  if (game.clockOffset == null || Math.abs(best - game.clockOffset) > 300) game.clockOffset = best;
+  else game.clockOffset += (best - game.clockOffset) * 0.05;
 
   game.snaps.push(snap);
   if (game.snaps.length > 30) game.snaps.shift();
@@ -390,17 +399,20 @@ function onSnapshot(snap) {
   if (game.you >= 0) reconcile(snap);
 }
 
+// Server tick at which our local tick `t` gets (or got) simulated.
+const serverTickFor = (t) => t + game.tickDelta;
+const isLive = (t) => game.tickDelta != null && serverTickFor(t) > game.goTick && !game.cars[game.you].removed;
+
 function reconcile(snap) {
-  const server = unpack(snap.c[game.you]);
-  if (!game.pred || snap.t < snap.go || game.cars[game.you].removed) {
-    game.pred = server;
-    game.history = [];
-    return;
-  }
-  // replay inputs the server has not seen yet on top of the authoritative state
-  game.history = game.history.filter((h) => h.seq > snap.a);
+  if (!snap.m) return;
+  const server = unpackOwn(snap.m);
+  if (snap.a < 0) { game.pred = server; return; } // server has not used any of our ticks yet
+  // The server has simulated our ticks up to snap.a; the state it sent is the
+  // result. Replay exactly the ticks it has not processed yet on top of it.
+  game.tickDelta = snap.t - snap.a;
+  game.history = game.history.filter((h) => h.tick > snap.a);
   let rec = server;
-  for (const h of game.history) rec = stepCar(rec, h.input, game.track);
+  for (const h of game.history) if (isLive(h.tick)) rec = stepCar(rec, h.input, game.track);
   const p = game.pred;
   const err = Math.hypot(rec.x - p.x, rec.y - p.y);
   if (err > SNAP_DISTANCE) {
@@ -457,38 +469,42 @@ function banner(text, ms) {
   if (text && ms) bannerTimer = setTimeout(() => $('banner').classList.remove('show'), ms);
 }
 
-function sendInput(inp, now) {
-  if (!game || game.you < 0 || !socket.connected) return;
-  const bits = inputBits(inp);
-  if (bits !== game.lastBits || now - game.lastSent >= INPUT_HEARTBEAT_MS) {
-    seqCounter++;
-    socket.volatile.emit('input', [bits, seqCounter]);
-    game.lastBits = bits;
-    game.lastSent = now;
-  }
+// Every local physics tick is numbered and its input is sent; the server applies
+// exactly one per tick. Sent once per frame (all ticks simulated in that frame).
+function flushInputs() {
+  if (!game.pending.length || !socket.connected) return;
+  socket.emit('input', [game.pendingStart, game.pending]);
+  game.pending = [];
 }
 
-// interpolate other cars ~100 ms in the past
+// other cars: interpolated ~120 ms in the past, briefly extrapolated if a packet is late
 function interpolate(renderTick) {
   const snaps = game.snaps;
   if (!snaps.length) return;
-  let a = snaps[0], b = snaps[0];
-  for (let i = snaps.length - 1; i >= 0; i--) {
-    if (snaps[i].t <= renderTick) { a = snaps[i]; b = snaps[i + 1] || snaps[i]; break; }
+  const last = snaps[snaps.length - 1];
+  let a = snaps[0], b = snaps[0], extra = 0;
+  if (renderTick >= last.t) {
+    a = b = last;
+    extra = Math.min(renderTick - last.t, 6);
+  } else {
+    for (let i = snaps.length - 1; i >= 0; i--) {
+      if (snaps[i].t <= renderTick) { a = snaps[i]; b = snaps[i + 1]; break; }
+    }
   }
-  const f = b.t > a.t ? Math.max(0, Math.min(1, (renderTick - a.t) / (b.t - a.t))) : 0;
+  const f = b.t > a.t ? (renderTick - a.t) / (b.t - a.t) : 0;
   for (let i = 0; i < game.cars.length; i++) {
     if (i === game.you) continue;
     const car = game.cars[i], ca = a.c[i], cb = b.c[i];
     if (Math.hypot(cb[0] - ca[0], cb[1] - ca[1]) > 50) { // teleport (respawn): don't slide across the map
       car.x = cb[0]; car.y = cb[1]; car.angle = cb[2];
     } else {
-      car.x = ca[0] + (cb[0] - ca[0]) * f;
-      car.y = ca[1] + (cb[1] - ca[1]) * f;
-      car.angle = ca[2] + wrap(cb[2] - ca[2]) * f;
+      car.x = ca[0] + (cb[0] - ca[0]) * f + cb[3] * extra;
+      car.y = ca[1] + (cb[1] - ca[1]) * f + cb[4] * extra;
+      car.angle = ca[2] + wrap(cb[2] - ca[2]) * f + cb[7] * extra;
     }
     car.vx = cb[3]; car.vy = cb[4];
     car.ghost = !!(cb[8] & 1);
+    car.boosting = !!(cb[8] & 64);
   }
 }
 
@@ -503,21 +519,28 @@ function frame(now) {
   if (!game) return;
 
   const inp = input.poll();
-  sendInput(inp, now);
   const st = serverTick();
   const me = game.you >= 0 ? game.cars[game.you] : null;
 
-  // own car: fixed-step prediction with the shared physics
+  // own car: fixed-step prediction with the shared physics, one numbered input per tick
   game.acc += dt;
-  const canDrive = me && game.pred && game.clockOffset != null && st >= game.goTick && !me.removed;
   while (game.acc >= TICK_MS) {
     game.acc -= TICK_MS;
-    if (!canDrive) continue;
-    game.pred = stepCar(game.pred, inp, game.track);
-    game.history.push({ seq: seqCounter, input: { ...inp } });
-    if (game.history.length > 240) game.history.shift();
+    if (!me) continue;
+    const tick = game.localTick++;
+    if (!game.pending.length) game.pendingStart = tick;
+    game.pending.push(inputBits(inp));
+    if (game.pending.length > 60) { game.pending.shift(); game.pendingStart++; }
+    if (isLive(tick)) {
+      const wasBoosting = game.pred.boostTicks > 0;
+      game.pred = stepCar(game.pred, inp, game.track);
+      if (!wasBoosting && game.pred.boostTicks > 0) audio.boost();
+    }
+    game.history.push({ tick, input: { ...inp } });
+    if (game.history.length > 300) game.history.shift();
   }
-  const k = Math.pow(0.5, dt / 70); // blend away reconciliation error
+  flushInputs();
+  const k = Math.pow(0.5, dt / 60); // blend away reconciliation error
   game.offset.x *= k; game.offset.y *= k; game.offset.a *= k;
 
   interpolate(st - INTERP_DELAY_MS / TICK_MS);
@@ -527,15 +550,17 @@ function frame(now) {
     me.angle = game.pred.angle + game.offset.a;
     me.vx = game.pred.xVelocity; me.vy = game.pred.yVelocity;
     me.ghost = !!(me.flags & 1);
+    me.boosting = game.pred.boostTicks > 0;
   }
 
-  // skid marks & kerb dust
+  // skid marks, edge dust, boost flames
   for (const car of game.cars) {
     if (car.removed) continue;
     const speed = Math.hypot(car.vx, car.vy);
     const slip = Math.abs(car.vx * Math.cos(car.angle) + car.vy * Math.sin(car.angle));
     if (slip > 0.45 && speed > 0.6) renderer.addSkid(car, now);
     if (car.flags & 2 && speed > 0.5 && Math.random() < 0.35) renderer.emit(car.x, car.y, 1, 'dust');
+    if (car.boosting) renderer.flame(car);
   }
 
   const leader = game.cars[game.order[0]];
@@ -583,6 +608,13 @@ function updateHud(st, speed01) {
     $('hud-best').textContent = me.best ? fmt(me.best) : '-';
     $('hud-total').textContent = finished ? fmt(me.finishMs) : fmt(started ? (st - game.goTick) * TICK_MS : 0);
     $('speedfill').style.width = `${Math.round(speed01 * 100)}%`;
+    const pred = game.pred || { boost: 0, boostTicks: 0 };
+    const active = pred.boostTicks > 0, ready = !active && pred.boost >= 1;
+    $('boost').classList.toggle('ready', ready);
+    $('boost').classList.toggle('active', active);
+    $('boostfill').style.width = `${Math.round((active ? pred.boostTicks / BOOST.durationTicks : pred.boost) * 100)}%`;
+    $('boost-pct').textContent = active ? 'BOOST!' : `${Math.floor(pred.boost * 100)}%`;
+    $('boost-label').textContent = ready ? (document.body.classList.contains('touch') ? 'Boost ready!' : 'Boost ready (Space)') : 'Boost';
     $('wrongway').classList.toggle('show', !!(me.flags & 4) && !finished);
   } else {
     $('hud-pos').textContent = 'Spectating';

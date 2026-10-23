@@ -5,7 +5,7 @@
 import {
   TICK_MS, SNAPSHOT_EVERY, LAPS, CHECKPOINTS, COUNTDOWN_MS, FINISH_GRACE_MS,
   WRONG_WAY_ANGLE, WRONG_WAY_MS, RESPAWN_GHOST_MS, RESPAWN_COOLDOWN_MS, POINTS,
-  MAX_PLAYERS, CAR_COLORS, RECONNECT_GRACE_MS,
+  MAX_PLAYERS, CAR_COLORS, RECONNECT_GRACE_MS, INPUT_QUEUE_MAX, INPUT_IDLE_TICKS, INPUT_JITTER_TICKS,
 } from '../shared/constants.js';
 import { MAPS, getMap } from '../shared/maps.js';
 import { buildTrack, crossedCheckpoint } from '../shared/track.js';
@@ -16,7 +16,7 @@ import { createBotBrain, botInput, BOT_NAMES, mulberry32 } from './bot.js';
 const ticks = (ms) => Math.round(ms / TICK_MS);
 const r2 = (v) => Math.round(v * 100) / 100;
 const r4 = (v) => Math.round(v * 10000) / 10000;
-const NO_INPUT = Object.freeze({ up: false, down: false, left: false, right: false });
+const NO_INPUT = Object.freeze({ up: false, down: false, left: false, right: false, boost: false });
 
 const trackCache = new Map();
 export function getTrack(mapId) {
@@ -111,7 +111,7 @@ export class Room {
     const player = {
       id, socketId, name: sanitizeName(name), color: this.freeColor(color),
       ready: false, connected: true, spectator: this.phase !== 'lobby',
-      input: { ...NO_INPUT }, seq: 0, reconnectTimer: null,
+      input: { ...NO_INPUT }, queue: [], lastQueued: -1, ack: -1, idle: 0, reconnectTimer: null,
     };
     this.players.set(id, player);
     if (!this.hostId) this.hostId = id;
@@ -134,8 +134,7 @@ export class Room {
     player.reconnectTimer = null;
     player.socketId = socketId;
     player.connected = true;
-    player.input = { ...NO_INPUT };
-    player.seq = 0; // a reloaded page starts counting input sequence numbers again
+    this.resetInputs(player); // a reloaded page starts numbering its ticks again
     this.broadcastRoom();
     if (this.phase === 'race') this.send(player, 'race', this.raceInfo(player));
     if (this.phase === 'results') this.send(player, 'results', this.results);
@@ -147,7 +146,7 @@ export class Room {
     const car = this.race && this.race.cars.find((c) => c.id === id);
     if (this.phase === 'race' && car && !car.removed) {
       p.connected = false;
-      p.input = { ...NO_INPUT };
+      this.resetInputs(p);
       p.reconnectTimer = setTimeout(() => this.removePlayer(id), RECONNECT_GRACE_MS);
       this.broadcastRoom();
     } else {
@@ -197,11 +196,49 @@ export class Room {
     this.broadcastRoom();
   }
 
-  setInput(id, bits, seq) {
+  // Clients number every physics tick they simulate and send the input used for
+  // each one. We buffer them and apply exactly one per server tick, so the client
+  // can replay precisely the ticks we have not processed yet.
+  queueInputs(id, startTick, list) {
     const p = this.players.get(id);
-    if (!p || !Number.isInteger(bits) || !Number.isInteger(seq) || seq < p.seq) return;
-    p.seq = seq;
-    p.input = { up: !!(bits & 1), down: !!(bits & 2), left: !!(bits & 4), right: !!(bits & 8) };
+    if (!p || !Number.isInteger(startTick) || startTick < 0 || !Array.isArray(list) || list.length > 60) return;
+    for (let i = 0; i < list.length; i++) {
+      const t = startTick + i;
+      if (t <= p.lastQueued || !Number.isInteger(list[i])) continue;
+      p.queue.push([t, list[i] & 31]);
+      p.lastQueued = t;
+    }
+    // way behind (e.g. after a lag spike): drop the oldest, keep the newest
+    while (p.queue.length > INPUT_QUEUE_MAX) this.applyInput(p, p.queue.shift());
+  }
+
+  applyInput(p, [tick, bits]) {
+    p.input = { up: !!(bits & 1), down: !!(bits & 2), left: !!(bits & 4), right: !!(bits & 8), boost: !!(bits & 16) };
+    p.ack = tick;
+    p.idle = 0;
+  }
+
+  consumeInput(p) {
+    // Jitter buffer: after running dry (a late packet), wait until a few ticks are
+    // queued again, so one late packet doesn't make us run dry again on the next.
+    if (p.starved && p.queue.length >= INPUT_JITTER_TICKS) p.starved = false;
+    if (p.queue.length && !p.starved) {
+      this.applyInput(p, p.queue.shift());
+      // client clock running a bit fast: catch up one tick
+      if (p.queue.length > INPUT_JITTER_TICKS + 8) this.applyInput(p, p.queue.shift());
+      return;
+    }
+    p.starved = true;
+    if (++p.idle > INPUT_IDLE_TICKS) p.input = { ...NO_INPUT }; // tab hidden / stalled: let go
+  }
+
+  resetInputs(p) {
+    p.input = { ...NO_INPUT };
+    p.queue = [];
+    p.lastQueued = -1;
+    p.ack = -1;
+    p.idle = 0;
+    p.starved = true;
   }
 
   requestRespawn(id) {
@@ -251,7 +288,7 @@ export class Room {
     for (const c of this.race.cars) { c.state.id = c.index; c.state.ghost = false; }
     this.phase = 'race';
     this.results = null;
-    for (const p of this.players.values()) { p.spectator = !entrants.some((e) => e.id === p.id); p.input = { ...NO_INPUT }; }
+    for (const p of this.players.values()) { p.spectator = !entrants.some((e) => e.id === p.id); this.resetInputs(p); }
     this.broadcastRoom();
     for (const p of this.players.values()) this.send(p, 'race', this.raceInfo(p));
     if (realtime) this.startLoop();
@@ -315,6 +352,9 @@ export class Room {
     if (!r || r.ended) return;
     r.tick++;
     const { track } = r;
+    // exactly one buffered input tick per player per server tick (also during the
+    // countdown, so the client's numbering and ours stay in step)
+    for (const p of this.players.values()) this.consumeInput(p);
 
     if (r.tick > r.goTick) {
       const active = r.cars.filter((c) => !c.removed);
@@ -383,7 +423,17 @@ export class Room {
   flags(c) {
     const r = this.race;
     return (c.state.ghost || r.tick < c.ghostUntil ? 1 : 0) | (c.state.onKerb ? 2 : 0) | (c.wrongWay ? 4 : 0)
-      | (c.finished ? 8 : 0) | (c.dnf ? 16 : 0) | (c.removed ? 32 : 0);
+      | (c.finished ? 8 : 0) | (c.dnf ? 16 : 0) | (c.removed ? 32 : 0)
+      | (c.state.boostTicks > 0 ? 64 : 0) | (c.state.drifting ? 128 : 0);
+  }
+
+  // Full-precision physics state of a player's own car, for exact reconciliation.
+  ownState(player) {
+    const car = this.race.cars.find((c) => c.id === player.id);
+    if (!car) return null;
+    const s = car.state;
+    return [s.x, s.y, s.angle, s.xVelocity, s.yVelocity, s.power, s.reverse, s.angularVelocity,
+      s.boost, s.boostTicks, s.seg];
   }
 
   snapshot() {
@@ -407,7 +457,7 @@ export class Room {
     const snap = this.snapshot();
     this.race.events = [];
     for (const p of this.players.values()) {
-      if (p.connected) this.send(p, 's', { ...snap, a: p.seq });
+      if (p.connected) this.send(p, 's', { ...snap, a: p.ack, m: this.ownState(p) });
     }
   }
 

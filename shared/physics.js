@@ -2,7 +2,7 @@
 // no randomness, and stepCar() never mutates its input.
 
 import {
-  PHYSICS, KERB_DRAG, KERB_POWER_CAP, CAR_WIDTH, CAR_LENGTH, CAR_RADIUS,
+  PHYSICS, BOOST, KERB_DRAG, KERB_POWER_CAP, CAR_WIDTH, CAR_LENGTH, CAR_RADIUS,
   WALL_RESTITUTION, WALL_FRICTION, WALL_SPIN, WALL_ITERATIONS,
 } from './constants.js';
 import { nearest, carPoints } from './track.js';
@@ -10,13 +10,17 @@ import { nearest, carPoints } from './track.js';
 const HALF_W = CAR_WIDTH / 2, HALF_L = CAR_LENGTH / 2;
 
 export function createCar(x, y, angle, seg = -1) {
-  return { x, y, angle, xVelocity: 0, yVelocity: 0, power: 0, reverse: 0, angularVelocity: 0, seg, onKerb: false };
+  return {
+    x, y, angle, xVelocity: 0, yVelocity: 0, power: 0, reverse: 0, angularVelocity: 0, seg,
+    onKerb: false, boost: 0, boostTicks: 0, drifting: false,
+  };
 }
 
 export function cloneCar(c) {
   return {
     x: c.x, y: c.y, angle: c.angle, xVelocity: c.xVelocity, yVelocity: c.yVelocity,
     power: c.power, reverse: c.reverse, angularVelocity: c.angularVelocity, seg: c.seg, onKerb: c.onKerb,
+    boost: c.boost || 0, boostTicks: c.boostTicks || 0, drifting: !!c.drifting,
   };
 }
 
@@ -26,8 +30,15 @@ export function speedOf(c) {
 
 // Throttle, steering, movement and kerb drag. Mutates `car` (callers pass a copy).
 export function integrate(car, input, track, p = PHYSICS) {
-  if (input.up) car.power = Math.min(car.power + p.powerFactor, p.maxPower);
+  if (input.boost && car.boost >= 1 && !car.boostTicks) {
+    car.boostTicks = BOOST.durationTicks;
+    car.boost = 0;
+  }
+  const boosting = car.boostTicks > 0;
+  const maxPower = boosting ? p.maxPower * BOOST.powerMult : p.maxPower;
+  if (input.up || boosting) car.power = Math.min(car.power + p.powerFactor * (boosting ? BOOST.accel : 1), maxPower);
   else car.power = Math.max(car.power - p.powerFactor, 0);
+  if (car.power > maxPower) car.power = maxPower;
   if (input.down) car.reverse = Math.min(car.reverse + p.reverseFactor, p.maxReverse);
   else car.reverse = Math.max(car.reverse - p.reverseFactor, 0);
 
@@ -44,6 +55,14 @@ export function integrate(car, input, track, p = PHYSICS) {
   car.yVelocity *= p.drag;
   car.angle += car.angularVelocity;
   car.angularVelocity *= p.angularDrag;
+
+  // boost meter: drifting (sliding sideways) fills it much faster
+  const slip = Math.abs(car.xVelocity * Math.cos(car.angle) + car.yVelocity * Math.sin(car.angle));
+  car.drifting = slip > BOOST.driftSlip;
+  if (boosting) car.boostTicks--;
+  else if (Math.hypot(car.xVelocity, car.yVelocity) > BOOST.minSpeed) {
+    car.boost = Math.min(1, car.boost + (car.drifting ? BOOST.fillDrift : BOOST.fillNormal));
+  }
 
   // Kerb: any part of the car touching the striped edge slows it a little.
   car.onKerb = false;

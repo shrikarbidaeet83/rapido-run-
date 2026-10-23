@@ -4,7 +4,7 @@
 
 import {
   SAMPLE_SPACING, KERB_WIDTH, NEAREST_WINDOW, CHECKPOINTS, CAR_RADIUS,
-  WORLD_WIDTH, WORLD_HEIGHT,
+  WORLD_MARGIN,
 } from './constants.js';
 
 // Turn each [x, y, r] vertex into points on a circular arc of radius r tangent to
@@ -102,7 +102,9 @@ export function buildTrack(map) {
   const track = {
     id: map.id, name: map.name, width, halfWidth, kerbWidth: KERB_WIDTH,
     n, xs, ys, tx, ty, nx, ny, segLen, s, length,
-    worldWidth: map.worldWidth || WORLD_WIDTH, worldHeight: map.worldHeight || WORLD_HEIGHT,
+    // the world is just big enough for the track plus a margin of grass
+    worldWidth: Math.ceil(Math.max(...xs) + halfWidth + WORLD_MARGIN),
+    worldHeight: Math.ceil(Math.max(...ys) + halfWidth + WORLD_MARGIN),
     theme: map.theme, difficulty: map.difficulty,
   };
 

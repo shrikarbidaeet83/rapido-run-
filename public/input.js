@@ -1,14 +1,14 @@
-// Keyboard (arrows + WASD), touch buttons and gamepad, merged into one state.
+// Keyboard (arrows + WASD, Space/Shift = boost), touch buttons and gamepad, merged into one state.
 
 const KEYMAP = {
   ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
   ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
+  Space: 'boost', ShiftLeft: 'boost', ShiftRight: 'boost',
 };
 
 export function createInput({ onRespawn, onPause, onMute, onStats, isTyping }) {
-  const keys = { up: false, down: false, left: false, right: false };
-  const touch = { up: false, down: false, left: false, right: false };
-  const pad = { up: false, down: false, left: false, right: false };
+  const blank = () => ({ up: false, down: false, left: false, right: false, boost: false });
+  const keys = blank(), touch = blank(), pad = blank();
   let padY = false;
 
   function releaseAll() {
@@ -57,7 +57,7 @@ export function createInput({ onRespawn, onPause, onMute, onStats, isTyping }) {
   if (isTouch) document.body.classList.add('touch');
 
   function pollGamepad() {
-    pad.up = pad.down = pad.left = pad.right = false;
+    pad.up = pad.down = pad.left = pad.right = pad.boost = false;
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     for (const gp of pads) {
       if (!gp || !gp.connected) continue;
@@ -67,6 +67,7 @@ export function createInput({ onRespawn, onPause, onMute, onStats, isTyping }) {
       pad.right ||= x > 0.35 || b(15);
       pad.up ||= b(7) || b(0);
       pad.down ||= b(6) || b(1);
+      pad.boost ||= b(2) || b(5);
       const y = b(3);
       if (y && !padY) onRespawn();
       padY = y;
@@ -83,11 +84,12 @@ export function createInput({ onRespawn, onPause, onMute, onStats, isTyping }) {
         down: keys.down || touch.down || pad.down,
         left: keys.left || touch.left || pad.left,
         right: keys.right || touch.right || pad.right,
+        boost: keys.boost || touch.boost || pad.boost,
       };
     },
   };
 }
 
 export function inputBits(i) {
-  return (i.up ? 1 : 0) | (i.down ? 2 : 0) | (i.left ? 4 : 0) | (i.right ? 8 : 0);
+  return (i.up ? 1 : 0) | (i.down ? 2 : 0) | (i.left ? 4 : 0) | (i.right ? 8 : 0) | (i.boost ? 16 : 0);
 }

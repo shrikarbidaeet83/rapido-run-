@@ -42,7 +42,7 @@ export function botInput(brain, car, track) {
   const desired = Math.atan2(tx - st.x, -(ty - st.y));
   const err = wrap(desired - st.angle) - st.angularVelocity * 9;
 
-  const input = { up: true, down: false, left: err < -0.025, right: err > 0.025, respawn: false };
+  const input = { up: true, down: false, left: err < -0.025, right: err > 0.025, boost: false, respawn: false };
 
   // corner speed: look further ahead the faster we go
   const turn = Math.max(turnAhead(track, along + 15, 70 + speed * 45), turnAhead(track, along + 40, 90 + speed * 50));
@@ -53,6 +53,9 @@ export function botInput(brain, car, track) {
     input.up = false;
     if (speed > target + 0.25) input.down = true;
   }
+  // fire the boost on a straight with nothing tight coming up
+  if (st.boost >= 1 && speed > 1 && turnAhead(track, along, 260) < 0.35) input.boost = true;
+
   // big heading error (after a spin): slow down and turn on the spot
   if (Math.abs(wrap(desired - st.angle)) > 1.2) {
     input.up = speed < 0.4;

@@ -3,6 +3,17 @@ import assert from 'node:assert/strict';
 import { Room, sanitizeName } from '../server/room.js';
 import { COUNTDOWN_MS, TICK_MS, RECONNECT_GRACE_MS, RESPAWN_GHOST_MS, CHECKPOINTS } from '../shared/constants.js';
 
+// Steps the room n ticks while player `id` holds the given input bits
+// (one numbered input per tick, like the real client).
+function hold(room, id, bits, n) {
+  const p = room.players.get(id);
+  for (let i = 0; i < n; i++) {
+    p._t = (p._t ?? -1) + 1;
+    room.queueInputs(id, p._t, [bits]);
+    room.step();
+  }
+}
+
 function makeRoom() {
   const sent = [];
   let emptied = false;
@@ -57,13 +68,12 @@ test('without bots only humans race; throttle before GO does nothing', () => {
   assert.equal(room.race.cars.length, 1);
   const car = room.race.cars[0];
   const x0 = car.state.x, y0 = car.state.y;
-  room.setInput('a', 1, 1);
   const goTicks = Math.round(COUNTDOWN_MS / TICK_MS);
-  for (let i = 0; i < goTicks; i++) room.step();
+  hold(room, 'a', 1, goTicks);
   assert.equal(car.state.x, x0);
   assert.equal(car.state.y, y0);
   assert.equal(car.state.power, 0);
-  for (let i = 0; i < 60; i++) room.step();
+  hold(room, 'a', 1, 60);
   assert.ok(Math.hypot(car.state.x - x0, car.state.y - y0) > 10, 'moves after GO');
 });
 
@@ -74,22 +84,21 @@ test('respawn: last checkpoint, ghost mode, 3 s cooldown', () => {
   room.setReady('a', true);
   room.startRace('a', { realtime: false });
   const car = room.race.cars[0];
-  room.setInput('a', 1, 1);
-  while (car.cpPassed < 3) room.step();
-  for (let i = 0; i < 30; i++) room.step();
+  while (car.cpPassed < 3) hold(room, 'a', 1, 1);
+  hold(room, 'a', 1, 30);
   room.requestRespawn('a');
-  room.step();
+  hold(room, 'a', 1, 1);
   const cp = room.race.track.checkpoints[(car.cpPassed - 1) % CHECKPOINTS];
   assert.ok(Math.hypot(car.state.x - cp.x, car.state.y - cp.y) < 5, 'at the last checkpoint');
   assert.ok(room.flags(car) & 1, 'ghost');
   const cooldownUntil = car.respawnAt;
-  for (let i = 0; i < 60; i++) room.step();
+  hold(room, 'a', 1, 60);
   const before = { x: car.state.x, y: car.state.y };
   room.requestRespawn('a'); // too soon: ignored
-  room.step();
+  hold(room, 'a', 1, 1);
   assert.equal(car.respawnAt, cooldownUntil, 'cooldown prevents a second respawn');
   assert.ok(Math.hypot(car.state.x - cp.x, car.state.y - cp.y) > Math.hypot(before.x - cp.x, before.y - cp.y), 'kept driving');
-  for (let i = 0; i < Math.round(RESPAWN_GHOST_MS / TICK_MS); i++) room.step();
+  hold(room, 'a', 1, Math.round(RESPAWN_GHOST_MS / TICK_MS));
   assert.equal(room.flags(car) & 1, 0, 'ghost wears off');
 });
 
@@ -132,4 +141,28 @@ test('host leaving mid-race passes host and the race goes on', () => {
   assert.equal(room.hostId, 'b');
   assert.equal(room.phase, 'race');
   room.destroy();
+});
+
+test('inputs: one per tick, duplicates ignored, released when the client goes quiet', () => {
+  const { room } = makeRoom();
+  room.addPlayer({ id: 'a', name: 'A' });
+  room.setFillBots('a', false);
+  room.setReady('a', true);
+  room.startRace('a', { realtime: false });
+  const p = room.players.get('a');
+  room.queueInputs('a', 0, [1, 1, 5, 5]);
+  room.queueInputs('a', 2, [5, 5, 9]); // overlaps: ticks 2, 3 are duplicates
+  assert.deepEqual(p.queue.map((q) => q[0]), [0, 1, 2, 3, 4]);
+  room.step();
+  assert.equal(p.ack, 0);
+  room.step(); room.step();
+  assert.equal(p.ack, 2);
+  assert.equal(p.input.left, true);
+  room.queueInputs('a', 1, [0]); // old tick: ignored
+  assert.equal(p.queue.length, 2);
+  room.queueInputs('a', 0, 'junk');
+  room.queueInputs('a', -5, [1]);
+  assert.equal(p.queue.length, 2);
+  for (let i = 0; i < 40; i++) room.step();
+  assert.equal(p.input.up, false, 'released after going quiet');
 });

@@ -25,7 +25,8 @@
         <button id="btn-join">Join Room</button>
       </div>
       <p id="home-error" class="error"></p>
-      <p class="hint">Arrows / WASD to drive · R respawn · Esc menu · M mute · F3 stats</p>
+      <p class="hint">Arrows / WASD to drive · Space boost · R respawn · Esc menu · M mute · F3 stats</p>
+      <p class="hint">Drift to fill the boost meter faster; at 100% press Space.</p>
     </div>
   </section>
 
@@ -65,26 +66,35 @@
   <section id="game" class="screen">
     <canvas id="canvas"></canvas>
     <div id="hud">
-      <div id="hud-main">
-        <div id="hud-pos">P-/-</div>
-        <div id="hud-lap">Lap -/10</div>
-        <div class="hud-row"><span>Lap</span><b id="hud-laptime">0:00.000</b></div>
-        <div class="hud-row"><span>Best</span><b id="hud-best">-</b></div>
-        <div class="hud-row"><span>Total</span><b id="hud-total">0:00.000</b></div>
-        <div id="speedbar"><div id="speedfill"></div></div>
+      <!-- two stacked columns, so panels can never overlap each other -->
+      <div id="hud-left">
+        <div id="hud-main">
+          <div id="hud-pos">P-/-</div>
+          <div id="hud-lap">Lap -/10</div>
+          <div class="hud-row"><span>Lap</span><b id="hud-laptime">0:00.000</b></div>
+          <div class="hud-row"><span>Best</span><b id="hud-best">-</b></div>
+          <div class="hud-row"><span>Total</span><b id="hud-total">0:00.000</b></div>
+          <div id="speedbar"><div id="speedfill"></div></div>
+          <div id="boost">
+            <div class="hud-row"><span id="boost-label">Boost</span><b id="boost-pct">0%</b></div>
+            <div id="boostbar"><div id="boostfill"></div></div>
+          </div>
+        </div>
+        <button id="btn-respawn" class="small">Respawn (R)</button>
       </div>
-      <ol id="board"></ol>
-      <canvas id="minimap" width="180" height="120"></canvas>
+      <div id="hud-right">
+        <ol id="board"></ol>
+        <canvas id="minimap" width="180" height="120"></canvas>
+      </div>
       <div id="lights"><i></i><i></i><i></i><i></i><i></i><div id="count"></div></div>
       <div id="banner"></div>
       <div id="wrongway">WRONG WAY</div>
       <div id="stats"></div>
-      <button id="btn-respawn" class="small">Respawn (R)</button>
       <button id="btn-menu" class="small">☰</button>
     </div>
     <div id="touch">
       <div class="tgroup left"><button data-key="left">◀</button><button data-key="right">▶</button></div>
-      <div class="tgroup right"><button data-key="down">BRAKE</button><button data-key="up">GAS</button></div>
+      <div class="tgroup right"><button data-key="boost" class="boost">BOOST</button><button data-key="down">BRAKE</button><button data-key="up">GAS</button></div>
     </div>
     <div id="pause" class="overlay">
       <div class="panel">
