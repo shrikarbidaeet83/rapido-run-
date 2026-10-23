@@ -5,6 +5,7 @@ import {
   MAX_PARTICLES, MAX_SKIDS,
 } from '/shared/constants.js';
 import { buildTrack } from '/shared/track.js';
+import { drawScenery, SCENERY_PAD } from './scenery.js';
 
 export function shade(hex, amt) {
   const n = parseInt(hex.slice(1), 16);
@@ -19,23 +20,27 @@ function tracePath(ctx, track, k = 1) {
   ctx.closePath();
 }
 
-// Draws the whole track once into an offscreen canvas.
+// Draws the whole track once into an offscreen canvas. The canvas covers the
+// world plus SCENERY_PAD on every side, so world (0, 0) is at canvas (P, P).
 export function prerenderTrack(track, scale) {
+  const P = SCENERY_PAD;
   const c = document.createElement('canvas');
-  c.width = Math.ceil(track.worldWidth * scale);
-  c.height = Math.ceil(track.worldHeight * scale);
+  c.width = Math.ceil((track.worldWidth + 2 * P) * scale);
+  c.height = Math.ceil((track.worldHeight + 2 * P) * scale);
   const g = c.getContext('2d');
   const th = track.theme;
   g.scale(scale, scale);
+  g.translate(P, P);
 
   // ground with a faint checker so speed is easy to read
   g.fillStyle = th.ground;
-  g.fillRect(0, 0, track.worldWidth, track.worldHeight);
+  g.fillRect(-P, -P, track.worldWidth + 2 * P, track.worldHeight + 2 * P);
   g.fillStyle = th.ground2;
   const T = 80;
-  for (let y = 0; y < track.worldHeight; y += T) {
-    for (let x = (y / T) % 2 ? T : 0; x < track.worldWidth; x += 2 * T) g.fillRect(x, y, T, T);
+  for (let y = -P; y < track.worldHeight + P; y += T) {
+    for (let x = -P + (((y + P) / T) % 2 ? T : 0); x < track.worldWidth + P; x += 2 * T) g.fillRect(x, y, T, T);
   }
+  drawScenery(g, track);
 
   // minimal look: plain asphalt with a single thin edge line on each side
   // (the line marks where the slower edge zone starts; the asphalt ends at the wall)
@@ -124,7 +129,8 @@ export class Renderer {
   setTrack(track) {
     this.track = track;
     // ~2 px per world unit, but stay under mobile canvas size limits (~16M px)
-    const maxScale = Math.sqrt(15e6 / (track.worldWidth * track.worldHeight));
+    const P2 = 2 * SCENERY_PAD;
+    const maxScale = Math.sqrt(15e6 / ((track.worldWidth + P2) * (track.worldHeight + P2)));
     this.scale = Math.min(2, maxScale);
     this.trackImg = prerenderTrack(track, this.scale);
     this.skids.length = 0;
@@ -234,11 +240,13 @@ export class Renderer {
     ctx.setTransform(dpr * z, 0, 0, dpr * z, dpr * (this.w / 2 - cx * z), dpr * (this.h / 2 - cy * z));
 
     // visible part of the pre-rendered track
-    const vx = Math.max(0, cx - halfW), vy = Math.max(0, cy - halfH);
-    const vw = Math.min(track.worldWidth - vx, halfW * 2 + 2), vh = Math.min(track.worldHeight - vy, halfH * 2 + 2);
+    // (the image extends SCENERY_PAD past the world on every side)
+    const P = SCENERY_PAD;
+    const vx = Math.max(-P, cx - halfW - 1), vy = Math.max(-P, cy - halfH - 1);
+    const vw = Math.min(track.worldWidth + P - vx, halfW * 2 + 2), vh = Math.min(track.worldHeight + P - vy, halfH * 2 + 2);
     const s = this.scale;
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(this.trackImg, vx * s, vy * s, vw * s, vh * s, vx, vy, vw, vh);
+    ctx.drawImage(this.trackImg, (vx + P) * s, (vy + P) * s, vw * s, vh * s, vx, vy, vw, vh);
 
     // skid marks
     const now = frame.now;

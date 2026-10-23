@@ -5,11 +5,11 @@
 // automatically around the track.
 
 const THEMES = {
-  grass:  { ground: '#7cb860', ground2: '#72ad57', asphalt: '#6b6e73', line: '#f4f4f4' },
-  city:   { ground: '#a9adb3', ground2: '#9fa3a9', asphalt: '#5c5f64', line: '#f4f4f4' },
-  forest: { ground: '#5f9a4c', ground2: '#578f45', asphalt: '#66696e', line: '#f4f4f4' },
-  rock:   { ground: '#a39283', ground2: '#9a8879', asphalt: '#62656a', line: '#f4f4f4' },
-  sand:   { ground: '#e3c98f', ground2: '#dbbf83', asphalt: '#707378', line: '#f4f4f4' },
+  grass: { kind: 'grass', ground: '#7cb860', ground2: '#72ad57', asphalt: '#6b6e73', line: '#f4f4f4' },
+  city: { kind: 'city', ground: '#a9adb3', ground2: '#9fa3a9', asphalt: '#5c5f64', line: '#f4f4f4' },
+  forest: { kind: 'forest', ground: '#5f9a4c', ground2: '#578f45', asphalt: '#66696e', line: '#f4f4f4' },
+  rock: { kind: 'rock', ground: '#a39283', ground2: '#9a8879', asphalt: '#62656a', line: '#f4f4f4' },
+  sand: { kind: 'sand', ground: '#e3c98f', ground2: '#dbbf83', asphalt: '#707378', line: '#f4f4f4' },
 };
 
 export const MAPS = [
