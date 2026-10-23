@@ -7,8 +7,7 @@ import {
 import { MAPS, getMap } from '/shared/maps.js';
 import { buildTrack } from '/shared/track.js';
 import { createCar, stepCar } from '/shared/physics.js';
-import { Renderer, drawThumbnail, prerenderTrack } from './render.js';
-import { Backdrop } from './scenery.js';
+import { Renderer, drawThumbnail } from './render.js';
 import { createInput, inputBits } from './input.js';
 import { audio } from './audio.js';
 
@@ -64,8 +63,6 @@ let showStats = false;
 let paused = false;
 
 const renderer = new Renderer($('canvas'), $('minimap'));
-const backdrop = new Backdrop($('backdrop'), prerenderTrack);
-backdrop.start();
 const input = createInput({
   onRespawn: () => { if (game && game.you >= 0) socket.emit('respawn'); },
   onPause: () => { if (game) setPaused(!paused); },
@@ -77,7 +74,6 @@ const input = createInput({
 // ---------- helpers ----------
 function show(id) {
   for (const s of document.querySelectorAll('.screen')) s.classList.toggle('active', s.id === id);
-  if (id === 'game') backdrop.stop(); else backdrop.start(); // live track scene behind the menus
   if (id !== 'game') setPaused(false);
 }
 
