@@ -6,6 +6,16 @@
 - **Client:** vanilla ES modules and HTML5 Canvas 2D, with no framework and no build step.
 - **Shared:** `/shared` holds the physics, track geometry and constants. Both server and client import it.
 
+## Office look
+
+The game is styled to stay quiet on a work screen:
+
+- **Colours:** a white graph-paper background, a light grey road and muted car colours.
+- **Text:** small and plain, with no flashing banners, red start lights, trophies or emojis.
+- **Effects and sound:** no screen shake or bright effects, and sound is off by default.
+- **Browser tab:** titled "Workspace", with a plain document icon.
+- **Boss key:** **B** (or **`**) instantly covers the screen with a plain "Meeting notes" page and changes the tab title to match. Your controls are released while it's up. Online races keep running, so your car coasts. Press B again to come back.
+
 ## Run
 
 ```bash
@@ -26,7 +36,8 @@ To play with friends: share the room code or the **Copy link** URL (`?room=ABCD`
 | Boost (when the meter is 100%) | Space / Shift | BOOST (right) | X / RB |
 | Respawn at last checkpoint | R | Respawn button | Y |
 | Menu (the race keeps running) | Esc | ☰ | |
-| Mute (saved) | M | Menu → Mute | |
+| Sound on/off (off by default, saved) | M | Menu → Sound | |
+| **Hide screen (boss key)** | B or ` | Menu → Hide screen (double-tap to return) | |
 | FPS / ping | F3 | | |
 | Zoom 1×–4× | Mouse wheel | Pinch | |
 

@@ -68,6 +68,7 @@ const input = createInput({
   onPause: () => { if (game) setPaused(!paused); },
   onMute: () => updateMute(audio.toggleMute()),
   onStats: () => { showStats = !showStats; $('stats').classList.toggle('show', showStats); },
+  onBoss: () => toggleBoss(),
   isTyping: () => ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName),
 });
 
@@ -101,8 +102,20 @@ const lapsDone = (cp) => (cp >= 1 ? Math.floor((cp - 1) / CHECKPOINTS) : 0);
 
 function setError(id, msg) { $(id).textContent = msg || ''; }
 
-function updateMute(muted) { $('btn-mute').textContent = muted ? 'Unmute (M)' : 'Mute (M)'; }
+function updateMute(muted) { $('btn-mute').textContent = muted ? 'Sound on (M)' : 'Sound off (M)'; }
 updateMute(audio.muted);
+
+// Boss key (B or `): instantly cover everything with a plain notes page.
+const TITLE = document.title;
+let boss = false;
+function toggleBoss(force) {
+  boss = force ?? !boss;
+  $('boss').classList.toggle('show', boss);
+  document.title = boss ? 'Meeting notes' : TITLE;
+  input.releaseAll();
+  if (boss) audio.engine(0, false);
+}
+$('boss').addEventListener('dblclick', () => toggleBoss(false));
 
 function setPaused(p) {
   paused = p;
@@ -205,7 +218,7 @@ function renderLobby() {
   $('player-list').replaceChildren(...room.players.map((p) => el('li', {},
     dot(p.color),
     el('span', { text: p.name + (p.id === room.you ? ' (you)' : '') }),
-    p.id === room.hostId ? el('span', { text: '👑', title: 'Host' }) : null,
+    p.id === room.hostId ? el('span', { class: 'muted', text: '(host)' }) : null,
     el('span', { class: 'tag' + (p.ready ? ' ready' : ''), text: !p.connected ? 'reconnecting…' : p.ready ? 'READY' : 'not ready' }))));
   const taken = new Set(room.players.filter((p) => p.id !== room.you).map((p) => p.color));
   renderSwatches($('lobby-colors'), me && me.color, taken, (c) => {
@@ -251,12 +264,12 @@ function renderResults() {
   const rows = results.rows;
   const podium = [rows[1], rows[0], rows[2]].filter(Boolean).map((r) => el('div', { class: 'step' },
     el('div', { class: 'mini-car', style: { background: r.color } }, el('i')),
-    el('div', { class: 'name', text: r.name + (r.winner ? ' 🏆' : '') }),
+    el('div', { class: 'name', text: r.name }),
     el('div', { class: 'block', style: { height: `${r.pos === 1 ? 70 : r.pos === 2 ? 50 : 36}px` }, text: String(r.pos) })));
   $('podium').replaceChildren(...podium);
   $('results-table').querySelector('tbody').replaceChildren(...rows.map((r) => el('tr', { class: (r.winner ? 'winner' : '') + (room && r.id === room.you ? ' me' : '') },
     el('td', { text: String(r.pos) }),
-    el('td', {}, dot(r.color), ' ', el('span', { text: r.name }), r.winner ? el('b', { text: ' 🏆 WINNER' }) : null),
+    el('td', {}, dot(r.color), ' ', el('span', { text: r.name }), r.winner ? el('span', { class: 'muted', text: ' · winner' }) : null),
     el('td', { text: fmt(r.totalMs) }),
     el('td', { text: fmt(r.bestLapMs) }),
     el('td', { text: r.status === 'DNF' ? `${r.laps}/${LAPS} laps` : r.gapMs === 0 ? '-' : `+${fmt(r.gapMs)}` }),
@@ -275,6 +288,7 @@ $('btn-lobby').addEventListener('click', () => socket.emit('lobby'));
 // ---------- pause menu ----------
 $('btn-menu').addEventListener('click', () => setPaused(true));
 $('btn-resume').addEventListener('click', () => setPaused(false));
+$('btn-hide').addEventListener('click', () => { setPaused(false); toggleBoss(true); });
 $('btn-mute').addEventListener('click', () => updateMute(audio.toggleMute()));
 $('btn-quit').addEventListener('click', leave);
 $('btn-respawn').addEventListener('click', () => { if (game && game.you >= 0) socket.emit('respawn'); });
@@ -433,13 +447,13 @@ function handleEvent(e) {
   const you = game.you;
   if (e[0] === 'c') {
     const [, x, y, impact, a, b] = e;
-    renderer.emit(x, y, Math.min(16, 4 + impact * 6), 'spark', Math.min(2, 0.6 + impact * 0.5));
+    renderer.emit(x, y, Math.min(5, 1 + impact * 2), 'spark', Math.min(1.2, 0.4 + impact * 0.3));
     const near = Math.max(0, 1 - cameraDistance(x, y) / 400);
     audio.crash(Math.min(1, impact / 2.5) * near);
     if ((a === you || b === you) && impact > 0.8) renderer.addShake(impact * 1.5);
   } else if (e[0] === 'w') {
     const [, x, y, impact, id] = e;
-    renderer.emit(x, y, Math.min(12, 3 + impact * 5), 'spark', Math.min(2, 0.5 + impact * 0.5));
+    renderer.emit(x, y, Math.min(4, 1 + impact * 2), 'spark', Math.min(1.2, 0.4 + impact * 0.3));
     const near = Math.max(0, 1 - cameraDistance(x, y) / 400);
     audio.crash(Math.min(1, impact / 3) * near * 0.7);
     if (id === you && impact > 1) renderer.addShake(impact);
@@ -448,13 +462,13 @@ function handleEvent(e) {
     const car = game.cars[idx];
     if (fin && !game.winnerShown) {
       game.winnerShown = true;
-      banner(idx === you ? '🏆 YOU WIN!' : `🏆 ${car.name} wins!`, 3000);
+      banner(idx === you ? 'You finished first' : `${car.name} finished first`, 2500);
       if (idx === you) audio.fanfare();
       else if (you >= 0) audio.beep(true);
     } else if (idx === you) {
-      if (fin) { banner(`Finished P${game.order.indexOf(you) + 1}`, 4000); audio.fanfare(); } else {
+      if (fin) { banner(`Finished · P${game.order.indexOf(you) + 1}`, 3000); audio.fanfare(); } else {
         const done = lapsDone(car.cpPassed);
-        banner(done === LAPS - 1 ? 'Final lap!' : `Lap ${Math.min(LAPS, done + 1)}`, 1500);
+        banner(done === LAPS - 1 ? 'Final lap' : `Lap ${Math.min(LAPS, done + 1)}`, 1200);
         audio.beep(true);
       }
     }
@@ -518,7 +532,7 @@ function frame(now) {
   if (fpsTime >= 500) { fps = Math.round((fpsFrames * 1000) / fpsTime); fpsFrames = 0; fpsTime = 0; }
   if (!game) return;
 
-  const inp = input.poll();
+  const inp = boss ? { up: false, down: false, left: false, right: false, boost: false } : input.poll();
   const st = serverTick();
   const me = game.you >= 0 ? game.cars[game.you] : null;
 
@@ -560,7 +574,7 @@ function frame(now) {
     const slip = Math.abs(car.vx * Math.cos(car.angle) + car.vy * Math.sin(car.angle));
     if (slip > 0.45 && speed > 0.6) renderer.addSkid(car, now);
     if (car.flags & 2 && speed > 0.5 && Math.random() < 0.35) renderer.emit(car.x, car.y, 1, 'dust');
-    if (car.boosting) renderer.flame(car);
+    if (car.boosting && Math.random() < 0.4) renderer.flame(car);
   }
 
   const leader = game.cars[game.order[0]];
@@ -569,7 +583,7 @@ function frame(now) {
   renderer.drawMinimap(game.cars);
 
   const speed01 = me ? Math.min(1, Math.hypot(me.vx, me.vy) / TOP_SPEED) : 0;
-  audio.engine(speed01, !!me && !me.removed && !paused);
+  audio.engine(speed01, !!me && !me.removed && !paused && !boss);
 
   updateCountdown(st);
   if (now - game.hudAt > 100) { game.hudAt = now; updateHud(st, speed01); }
@@ -590,7 +604,7 @@ function updateCountdown(st) {
     lights.classList.remove('show');
     if (!game.goShown) {
       game.goShown = true;
-      if (st - game.goTick < 60) { banner('GO!', 1000); audio.beep(true); }
+      if (st - game.goTick < 60) { banner('Go', 800); audio.beep(true); }
     }
   }
 }
@@ -613,8 +627,8 @@ function updateHud(st, speed01) {
     $('boost').classList.toggle('ready', ready);
     $('boost').classList.toggle('active', active);
     $('boostfill').style.width = `${Math.round((active ? pred.boostTicks / BOOST.durationTicks : pred.boost) * 100)}%`;
-    $('boost-pct').textContent = active ? 'BOOST!' : `${Math.floor(pred.boost * 100)}%`;
-    $('boost-label').textContent = ready ? (document.body.classList.contains('touch') ? 'Boost ready!' : 'Boost ready (Space)') : 'Boost';
+    $('boost-pct').textContent = active ? 'on' : `${Math.floor(pred.boost * 100)}%`;
+    $('boost-label').textContent = ready ? (document.body.classList.contains('touch') ? 'Boost ready' : 'Boost ready (Space)') : 'Boost';
     $('wrongway').classList.toggle('show', !!(me.flags & 4) && !finished);
   } else {
     $('hud-pos').textContent = 'Spectating';

@@ -28,14 +28,16 @@ export function prerenderTrack(track, scale) {
   const th = track.theme;
   g.scale(scale, scale);
 
-  // ground with a faint checker so speed is easy to read
+  // plain "graph paper" ground; the faint grid still makes speed easy to read
   g.fillStyle = th.ground;
   g.fillRect(0, 0, track.worldWidth, track.worldHeight);
-  g.fillStyle = th.ground2;
-  const T = 80;
-  for (let y = 0; y < track.worldHeight; y += T) {
-    for (let x = (y / T) % 2 ? T : 0; x < track.worldWidth; x += 2 * T) g.fillRect(x, y, T, T);
-  }
+  g.strokeStyle = th.grid;
+  g.lineWidth = 1;
+  g.beginPath();
+  const T = 40;
+  for (let x = T; x < track.worldWidth; x += T) { g.moveTo(x, 0); g.lineTo(x, track.worldHeight); }
+  for (let y = T; y < track.worldHeight; y += T) { g.moveTo(0, y); g.lineTo(track.worldWidth, y); }
+  g.stroke();
 
   // minimal look: plain asphalt with a single thin edge line on each side
   // (the line marks where the slower edge zone starts; the asphalt ends at the wall)
@@ -54,8 +56,8 @@ export function prerenderTrack(track, scale) {
   g.stroke();
 
   // grid boxes
-  g.strokeStyle = 'rgba(255,255,255,0.85)';
-  g.lineWidth = 1.2;
+  g.strokeStyle = th.line;
+  g.lineWidth = 1;
   for (const s of track.gridSlots) {
     g.save();
     g.translate(s.x, s.y);
@@ -68,19 +70,17 @@ export function prerenderTrack(track, scale) {
     g.restore();
   }
 
-  // checkerboard start/finish line
+  // start/finish: one thin dashed line across the road
   const cp = track.checkpoints[0];
-  g.save();
-  g.translate(cp.x, cp.y);
-  g.rotate(Math.atan2(cp.ty, cp.tx));
-  const sq = 5, half = track.halfWidth - track.kerbWidth;
-  for (let row = 0; row < 2; row++) {
-    for (let k = -half, col = 0; k < half; k += sq, col++) {
-      g.fillStyle = (row + col) % 2 ? '#111' : '#fff';
-      g.fillRect(-sq + row * sq, k, sq, Math.min(sq, half - k));
-    }
-  }
-  g.restore();
+  const half = track.halfWidth - track.kerbWidth;
+  g.strokeStyle = '#9aa0a6';
+  g.lineWidth = 1.5;
+  g.setLineDash([4, 3]);
+  g.beginPath();
+  g.moveTo(cp.x + cp.nx * half, cp.y + cp.ny * half);
+  g.lineTo(cp.x - cp.nx * half, cp.y - cp.ny * half);
+  g.stroke();
+  g.setLineDash([]);
   return c;
 }
 
@@ -93,11 +93,11 @@ export function drawThumbnail(canvas, map) {
   g.fillRect(0, 0, canvas.width, canvas.height);
   g.lineJoin = 'round';
   tracePath(g, track, k);
-  g.strokeStyle = map.theme.asphalt;
+  g.strokeStyle = '#d3d7dc';
   g.lineWidth = Math.max(3, track.width * k);
   g.stroke();
   const cp = track.checkpoints[0];
-  g.fillStyle = '#fff';
+  g.fillStyle = '#9aa0a6';
   g.fillRect(cp.x * k - 2, cp.y * k - 2, 4, 4);
   return track;
 }
@@ -159,7 +159,7 @@ export class Renderer {
     this.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, this.zoom * factor));
   }
 
-  addShake(amount) { this.shake = Math.min(6, this.shake + amount); }
+  addShake() { /* no screen shake: keep it calm */ }
 
   emit(x, y, n, kind, power = 1) {
     for (let i = 0; i < n; i++) {
@@ -247,7 +247,7 @@ export class Renderer {
     for (const sk of this.skids) {
       const age = (now - sk.t) / 5000;
       if (age >= 1) continue;
-      ctx.strokeStyle = `rgba(20,20,20,${0.35 * (1 - age)})`;
+      ctx.strokeStyle = `rgba(0,0,0,${0.07 * (1 - age)})`;
       ctx.beginPath();
       ctx.moveTo(sk.a[0], sk.a[1]); ctx.lineTo(sk.b[0], sk.b[1]);
       ctx.moveTo(sk.a[2], sk.a[3]); ctx.lineTo(sk.b[2], sk.b[3]);
@@ -262,7 +262,7 @@ export class Renderer {
       ctx.globalAlpha = car.ghost ? 0.4 : 1;
       ctx.translate(car.x, car.y);
       ctx.rotate(car.angle);
-      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fillStyle = 'rgba(0,0,0,0.08)';
       ctx.fillRect(-CAR_WIDTH / 2 + 0.8, -CAR_LENGTH / 2 + 1.2, CAR_WIDTH, CAR_LENGTH);
       ctx.fillStyle = car.color;
       ctx.fillRect(-CAR_WIDTH / 2, -CAR_LENGTH / 2, CAR_WIDTH, CAR_LENGTH);
@@ -279,9 +279,7 @@ export class Renderer {
       p.x += p.vx * dtk; p.y += p.vy * dtk;
       p.vx *= 0.94; p.vy *= 0.94;
       const a = Math.max(0, p.life / p.max);
-      ctx.fillStyle = p.kind === 'spark' ? `rgba(255,${180 + Math.floor(60 * a)},60,${a})`
-        : p.kind === 'flame' ? `rgba(${120 + Math.floor(135 * a)},${180 + Math.floor(70 * a)},255,${a * 0.9})`
-          : `rgba(170,150,120,${a * 0.5})`;
+      ctx.fillStyle = `rgba(110,115,120,${a * (p.kind === 'spark' ? 0.6 : 0.25)})`; // quiet grey specks
       ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
     }
 
@@ -296,9 +294,9 @@ export class Renderer {
       const px = this.w < 760 ? 9 : 11;
       ctx.font = `${car.me ? 'bold ' : ''}${px}px -apple-system, Segoe UI, Roboto, sans-serif`;
       ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+      ctx.strokeStyle = 'rgba(251,251,251,0.8)';
       ctx.strokeText(car.name, sx, sy);
-      ctx.fillStyle = '#222';
+      ctx.fillStyle = car.me ? '#444' : '#888';
       ctx.fillText(car.name, sx, sy);
     }
     ctx.globalAlpha = 1;
@@ -314,7 +312,7 @@ export class Renderer {
     g.translate(ox, oy);
     g.lineJoin = 'round';
     tracePath(g, track, k);
-    g.strokeStyle = '#999';
+    g.strokeStyle = '#d5d8dc';
     g.lineWidth = Math.max(3, track.width * k);
     g.stroke();
     let me = null;

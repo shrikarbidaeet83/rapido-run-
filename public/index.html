@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Tiny Racers</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='4' y='0' width='8' height='16' fill='%23e53935'/%3E%3Crect x='4' y='6' width='8' height='6' fill='%23a02725'/%3E%3C/svg%3E">
+  <title>Workspace</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='1' width='12' height='14' rx='1.5' fill='%23e8eaed' stroke='%239aa0a6'/%3E%3Cpath d='M5 5h6M5 8h6M5 11h4' stroke='%239aa0a6'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,7 +12,7 @@
   <section id="home" class="screen active">
     <div class="panel">
       <h1>Tiny Racers</h1>
-      <p class="sub">8-player online top-down racing</p>
+      <p class="sub">Press B any time to hide the screen.</p>
       <label>Name <input id="name" maxlength="12" autocomplete="off" spellcheck="false"></label>
       <div class="label">Car colour</div>
       <div id="colors" class="swatches"></div>
@@ -25,7 +25,7 @@
         <button id="btn-join">Join Room</button>
       </div>
       <p id="home-error" class="error"></p>
-      <p class="hint">Arrows / WASD to drive · Space boost · R respawn · Esc menu · M mute · F3 stats</p>
+      <p class="hint">Arrows / WASD to drive · Space boost · R respawn · Esc menu · M sound · B hide · F3 stats</p>
       <p class="hint">Drift to fill the boost meter faster; at 100% press Space.</p>
     </div>
   </section>
@@ -101,6 +101,7 @@
         <h2>Menu</h2>
         <p class="hint">The race keeps running while this menu is open.</p>
         <button id="btn-resume">Resume</button>
+        <button id="btn-hide">Hide screen (B)</button>
         <button id="btn-mute">Mute</button>
         <button id="btn-quit" class="ghost">Leave Race</button>
       </div>
@@ -127,6 +128,32 @@
       <p id="results-wait" class="hint"></p>
     </div>
   </section>
+
+  <!-- boss key overlay (B or `): a plain notes page -->
+  <div id="boss" aria-hidden="true">
+    <div class="doc">
+      <div class="doc-title">Meeting notes</div>
+      <div class="doc-meta">Weekly sync · Attendees: team</div>
+      <h3>Agenda</h3>
+      <ol>
+        <li>Status of open items from last week</li>
+        <li>Timeline review and next milestones</li>
+        <li>Risks, blockers and owners</li>
+      </ol>
+      <h3>Notes</h3>
+      <ul>
+        <li>Most open items are on track; two need follow-up by Friday.</li>
+        <li>Draft timeline shared; feedback requested before the next sync.</li>
+        <li>Dependencies to be confirmed with the other teams this week.</li>
+      </ul>
+      <h3>Action items</h3>
+      <ul>
+        <li>Update the tracker with current status</li>
+        <li>Circulate summary to the group</li>
+        <li>Schedule follow-up review</li>
+      </ul>
+    </div>
+  </div>
 
   <script src="config.js"></script>
   <script type="module" src="main.js"></script>

@@ -4,17 +4,12 @@
 // start/finish line, so put it in the middle of a straight. The world is sized
 // automatically around the track.
 
-const THEMES = {
-  grass:  { ground: '#7cb860', ground2: '#72ad57', asphalt: '#6b6e73', line: '#f4f4f4' },
-  city:   { ground: '#a9adb3', ground2: '#9fa3a9', asphalt: '#5c5f64', line: '#f4f4f4' },
-  forest: { ground: '#5f9a4c', ground2: '#578f45', asphalt: '#66696e', line: '#f4f4f4' },
-  rock:   { ground: '#a39283', ground2: '#9a8879', asphalt: '#62656a', line: '#f4f4f4' },
-  sand:   { ground: '#e3c98f', ground2: '#dbbf83', asphalt: '#707378', line: '#f4f4f4' },
-};
+// One quiet, neutral look for every track: graph-paper background, light grey road.
+const PLAIN = { ground: '#fbfbfb', grid: '#eef0f2', asphalt: '#e6e8eb', line: '#c3c7cc' };
 
 export const MAPS = [
   {
-    id: 'speed-ring', name: 'Speed Ring', difficulty: 'Easy', width: 120, theme: THEMES.grass,
+    id: 'speed-ring', name: 'Speed Ring', difficulty: 'Easy', width: 120, theme: PLAIN,
     points: [
       [525, 126, 0], [916, 126, 170], [916, 559, 170],
       [695, 559, 85], [631, 495, 85], [555, 495, 85], [491, 559, 85],
@@ -22,7 +17,7 @@ export const MAPS = [
     ],
   },
   {
-    id: 'gp-classic', name: 'Grand Prix Classic', difficulty: 'Medium', width: 110, theme: THEMES.grass,
+    id: 'gp-classic', name: 'Grand Prix Classic', difficulty: 'Medium', width: 110, theme: PLAIN,
     points: [
       [500, 110, 0], [1080, 110, 75], [1080, 270, 75], [800, 270, 90],
       [920, 470, 110], [1080, 520, 90], [1080, 700, 80],
@@ -31,7 +26,7 @@ export const MAPS = [
     ],
   },
   {
-    id: 'harbour-streets', name: 'Harbour Streets', difficulty: 'Hard', width: 100, theme: THEMES.city,
+    id: 'harbour-streets', name: 'Harbour Streets', difficulty: 'Hard', width: 100, theme: PLAIN,
     points: [
       [600, 100, 0], [1060, 100, 70], [1060, 290, 70], [890, 290, 70], [890, 480, 70],
       [1060, 480, 70], [1060, 700, 70], [240, 700, 70], [240, 530, 70], [470, 530, 75],
@@ -39,7 +34,7 @@ export const MAPS = [
     ],
   },
   {
-    id: 'serpent-valley', name: 'Serpent Valley', difficulty: 'Medium', width: 110, theme: THEMES.forest,
+    id: 'serpent-valley', name: 'Serpent Valley', difficulty: 'Medium', width: 110, theme: PLAIN,
     points: [
       [525, 610, 0], [109, 610, 120], [109, 355, 100],
       [279, 160, 90], [449, 355, 90], [619, 160, 90], [789, 355, 90],
@@ -47,7 +42,7 @@ export const MAPS = [
     ],
   },
   {
-    id: 'hairpin-mountain', name: 'Hairpin Mountain', difficulty: 'Hard', width: 95, theme: THEMES.rock,
+    id: 'hairpin-mountain', name: 'Hairpin Mountain', difficulty: 'Hard', width: 95, theme: PLAIN,
     points: [
       [560, 560, 0], [1000, 560, 80], [1000, 100, 70], [860, 100, 65],
       [860, 360, 65], [720, 360, 65], [720, 100, 65], [580, 100, 65],
@@ -56,7 +51,7 @@ export const MAPS = [
     ],
   },
   {
-    id: 'desert-loop', name: 'Desert Loop', difficulty: 'Easy', width: 120, theme: THEMES.sand,
+    id: 'desert-loop', name: 'Desert Loop', difficulty: 'Easy', width: 120, theme: PLAIN,
     points: [
       [491, 109, 0], [831, 109, 160], [874, 398, 130], [780, 559, 130],
       [143, 559, 170], [109, 109, 170],

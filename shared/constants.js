@@ -79,8 +79,9 @@ export const RATE_LIMIT_PER_SEC = 120;       // socket messages per second per c
 export const WORLD_MARGIN = 60;             // grass around the track (world size is per map)
 
 export const CAR_COLORS = [
-  '#e53935', '#1e88e5', '#43a047', '#fdd835',
-  '#8e24aa', '#fb8c00', '#00acc1', '#ec407a',
+  // muted, so nothing on screen looks loud
+  '#c46b6b', '#5b7db1', '#6f9a5e', '#b39b4a',
+  '#8a7fb8', '#c98a5e', '#5aa39a', '#7a8794',
 ];
 
 // Camera / rendering

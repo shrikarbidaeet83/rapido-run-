@@ -1,8 +1,9 @@
 // WebAudio-only sounds, synthesized on the fly (no audio files).
 
 let ctx = null, master = null, engineOsc = null, engineOsc2 = null, engineGain = null, noiseBuf = null;
-let muted = false;
-try { muted = localStorage.getItem('tr-muted') === '1'; } catch { /* storage blocked */ }
+// Sound is OFF unless the player turned it on (M) — quiet by default for office play.
+let muted = true;
+try { muted = localStorage.getItem('tr-sound') !== 'on'; } catch { /* storage blocked */ }
 
 function ensure() {
   if (ctx) return true;
@@ -46,7 +47,7 @@ export const audio = {
 
   toggleMute() {
     muted = !muted;
-    try { localStorage.setItem('tr-muted', muted ? '1' : '0'); } catch { /* ignore */ }
+    try { localStorage.setItem('tr-sound', muted ? 'off' : 'on'); } catch { /* ignore */ }
     if (master) master.gain.setTargetAtTime(muted ? 0 : 0.5, ctx.currentTime, 0.02);
     return muted;
   },

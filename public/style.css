@@ -180,3 +180,62 @@ body.touch #stats { bottom: 130px; }
 .overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,.3); align-items: center; justify-content: center; }
 .overlay.show { display: flex; }
 .overlay .panel { display: flex; flex-direction: column; gap: 8px; width: 240px; }
+
+/* ===================================================================
+   Office look: quiet, neutral, nothing that reads as "game" at a glance.
+   (Overrides the rules above.)
+   =================================================================== */
+:root { --bg: #fbfbfb; --panel: #ffffff; --text: #3c4043; --muted: #80868b; --line: #e3e5e8; --accent: #5f6368; --error: #b3261e; }
+html, body { font-size: 13px; }
+h1 { font-size: 16px; font-weight: 600; letter-spacing: 0; }
+h2 { font-size: 14px; font-weight: 600; }
+.panel { border-radius: 4px; box-shadow: none; }
+button { border-color: #dadce0; color: var(--text); border-radius: 4px; }
+button.primary { background: var(--accent); border-color: var(--accent); }
+button.primary:hover:not(:disabled) { background: #4a4e52; }
+button.on { background: #e8eaed; color: var(--text); border-color: #c4c7cb; }
+.muted { color: var(--muted); font-size: 11px; }
+.code { background: #f8f9fa; }
+.map { background: #fff; border-color: #eee; }
+.map.selected { border-color: #9aa0a6; }
+.players .tag.ready { color: var(--text); font-weight: 500; }
+tr.winner td { background: #f5f6f7; font-weight: 500; }
+.podium { display: none; }
+
+/* HUD */
+#hud-main, #board, #minimap { background: rgba(255,255,255,.92); border-color: var(--line); border-radius: 4px; }
+#hud-pos { font-size: 15px; font-weight: 600; }
+#hud-lap { font-size: 12px; color: var(--muted); }
+#speedbar, #boostbar { height: 3px; background: #eceef0; }
+#speedfill { background: #9aa0a6; }
+#boostfill { background: #b6bbc1; }
+#boost.ready #boostfill { background: #5f6368; animation: none; }
+#boost.ready #boost-label { color: var(--text); font-weight: 500; }
+#boost.active #boostfill { background: #3c4043; }
+#board li.me { font-weight: 600; }
+
+/* countdown: small grey dots, no red lights */
+#lights { background: transparent; padding: 4px 6px 18px; gap: 6px; }
+#lights i { width: 10px; height: 10px; background: #e3e5e8; }
+#lights i.on { background: #80868b; box-shadow: none; }
+#count { color: var(--muted); font-size: 12px; font-weight: 500; }
+
+/* messages: small neutral pills instead of big shouting text */
+#banner { font-size: 13px; font-weight: 500; color: var(--text); text-shadow: none; background: rgba(255,255,255,.95); border: 1px solid var(--line); border-radius: 12px; padding: 3px 12px; }
+#wrongway { font-size: 13px; font-weight: 500; letter-spacing: 0; color: #b3261e; background: #fff; border: 1px solid #f1d0cd; border-radius: 12px; padding: 3px 12px; }
+#wrongway.show { animation: none; }
+
+#touch button { background: rgba(255,255,255,.7); border: 1px solid #dadce0; color: var(--muted); font-weight: 500; }
+#touch button.boost { border-color: #dadce0; color: var(--muted); }
+#touch button.held { background: #e8eaed; color: var(--text); }
+
+/* boss key overlay */
+#boss { display: none; position: fixed; inset: 0; z-index: 1000; background: #fff; overflow: auto; color: #3c4043; }
+#boss.show { display: block; }
+#boss .doc { max-width: 720px; margin: 0 auto; padding: 48px 24px; font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
+#boss .doc-title { font-size: 24px; font-weight: 400; }
+#boss .doc-meta { color: #80868b; font-size: 12px; margin-bottom: 18px; }
+#boss h3 { font-size: 15px; font-weight: 600; margin: 18px 0 6px; }
+#boss ol, #boss ul { margin: 0; padding-left: 22px; }
+
+input[type="checkbox"] { accent-color: #5f6368; }

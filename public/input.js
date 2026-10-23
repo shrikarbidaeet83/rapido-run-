@@ -6,7 +6,7 @@ const KEYMAP = {
   Space: 'boost', ShiftLeft: 'boost', ShiftRight: 'boost',
 };
 
-export function createInput({ onRespawn, onPause, onMute, onStats, isTyping }) {
+export function createInput({ onRespawn, onPause, onMute, onStats, onBoss, isTyping }) {
   const blank = () => ({ up: false, down: false, left: false, right: false, boost: false });
   const keys = blank(), touch = blank(), pad = blank();
   let padY = false;
@@ -21,7 +21,8 @@ export function createInput({ onRespawn, onPause, onMute, onStats, isTyping }) {
     const k = KEYMAP[e.code];
     if (k) { keys[k] = true; e.preventDefault(); return; }
     if (e.repeat) return;
-    if (e.code === 'KeyR') onRespawn();
+    if (e.code === 'KeyB' || e.code === 'Backquote') onBoss();
+    else if (e.code === 'KeyR') onRespawn();
     else if (e.code === 'Escape') onPause();
     else if (e.code === 'KeyM') onMute();
     else if (e.code === 'F3') { e.preventDefault(); onStats(); }
