@@ -38,7 +38,7 @@ A 2D side-view, turn-based artillery game in the style of Pocket Tanks, with ori
 
 | Action | Mouse / touch | Keyboard | Gamepad |
 |---|---|---|---|
-| Aim | drag anywhere: the direction from your tank sets the angle, the distance sets the power | ← / → angle, ↑ / ↓ power (hold **Shift** for 0.1 steps) | left stick (angle), right stick / triggers (power) |
+| Aim + fire | **slingshot**: press anywhere, pull back and release. The shot goes opposite to your pull, and the stretch sets the power. Drag back to the start point to cancel | ← / → angle, ↑ / ↓ power (hold **Shift** for 0.1 steps) | left stick (angle), right stick / triggers (power) |
 | Fire | **FIRE** button | Space / Enter | A |
 | Move | ◀ ▶ buttons | A / D | D-pad ← → |
 | Switch weapon | ‹ › or tap the weapon card for the list | Q / E | LB / RB |

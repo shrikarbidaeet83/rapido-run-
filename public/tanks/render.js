@@ -414,12 +414,68 @@ export class Renderer {
     // off-screen arrows (screen space)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawOffscreen(ctx, scene, T);
+    if (scene.sling) this.drawSling(ctx, scene.sling, scene.slingColor);
     if (fx.flash > 0) {
       ctx.globalAlpha = Math.min(0.85, fx.flash);
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, this.cw, this.ch);
       ctx.globalAlpha = 1;
     }
+  }
+
+  // Slingshot in screen space: anchor, stretched band, shot arrow and power ring.
+  drawSling(ctx, s, color) {
+    const { ax, ay, px, py } = s;
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.fillStyle = 'rgba(255,255,255,.18)';
+    ctx.strokeStyle = 'rgba(255,255,255,.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(ax, ay, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    if (s.cancel) {
+      ctx.setLineDash([4, 5]);
+      ctx.beginPath(); ctx.arc(ax, ay, 18, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      return;
+    }
+    const k = s.power / 100;
+    const band = `hsl(${120 - k * 120}, 90%, 55%)`;
+    const nx = -(py - ay), ny = px - ax, nl = Math.hypot(nx, ny) || 1;
+    ctx.strokeStyle = band;
+    ctx.lineWidth = 6 - k * 3;
+    for (const sgn of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(ax + (nx / nl) * 9 * sgn, ay + (ny / nl) * 9 * sgn);
+      ctx.lineTo(px, py);
+      ctx.stroke();
+    }
+    const dx = ax - px, dy = ay - py, d = Math.hypot(dx, dy) || 1;
+    const len = 30 + k * 60, ex = ax + (dx / d) * len, ey = ay + (dy / d) * len;
+    ctx.setLineDash([6, 6]);
+    ctx.strokeStyle = 'rgba(255,255,255,.75)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke();
+    ctx.setLineDash([]);
+    const a = Math.atan2(dy, dx);
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    ctx.beginPath();
+    ctx.moveTo(ex + Math.cos(a) * 8, ey + Math.sin(a) * 8);
+    ctx.lineTo(ex + Math.cos(a + 2.5) * 8, ey + Math.sin(a + 2.5) * 8);
+    ctx.lineTo(ex + Math.cos(a - 2.5) * 8, ey + Math.sin(a - 2.5) * 8);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(px, py, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = band; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(px, py, 19, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.stroke();
+    ctx.font = '700 14px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.7)';
+    const label = `${Math.round(s.power)}%`;
+    ctx.strokeText(label, px, py - 28);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, px, py - 28);
+    ctx.restore();
   }
 
   drawAim(ctx, aim) {

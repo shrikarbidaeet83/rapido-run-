@@ -509,6 +509,7 @@ const myTurn = () => !!G.turn && !G.turn.fired && !!G.match && G.me.includes(G.m
 
 function startTurnUi(t, announce = true) {
   G.turn = t;
+  G.sling = null;
   if (t.tanks) G.st.tanks = t.tanks.map((x) => ({ ...x }));
   if (t.mines) G.st.mines = t.mines.map((x) => ({ ...x }));
   G.st.wind = t.wind;
@@ -569,6 +570,7 @@ function renderHud() {
   $('round').textContent = G.turn ? `Round ${G.turn.round}/${G.match.settings.weapons}` : '';
   const mine = myTurn() && !G.play && !G.moving;
   $('hud-bottom').classList.toggle('off', !mine);
+  $('aim-hint').hidden = !mine || G.aimedOnce;
   if (!mine) $('weapon-list').hidden = true;
   if (mine) {
     const tank = G.st.tanks[G.turn.player];
@@ -576,14 +578,11 @@ function renderHud() {
     const canMove = tank.moves > 0 && !G.turn.frozen;
     $('move-left').disabled = !canMove;
     $('move-right').disabled = !canMove;
-    $('power').max = G.turn.frozen ? FROZEN_POWER_CAP : 100;
     syncAimUi();
   }
 }
 
 function syncAimUi() {
-  $('angle').value = G.aim.angle;
-  $('power').value = G.aim.power;
   $('angle-val').textContent = G.aim.angle.toFixed(1).replace(/\.0$/, '');
   $('power-val').textContent = G.aim.power.toFixed(1).replace(/\.0$/, '');
   const item = G.turn && G.match.inv[G.turn.player].find((w) => w.slot === G.aim.slot);
@@ -653,19 +652,6 @@ $('w-next').onclick = () => cycleWeapon(1);
 $('w-open').onclick = openWeaponList;
 $('move-left').onclick = () => move(-1);
 $('move-right').onclick = () => move(1);
-$('angle').addEventListener('input', () => setAim(Number($('angle').value), G.aim.power));
-$('power').addEventListener('input', () => setAim(G.aim.angle, Number($('power').value)));
-for (const b of document.querySelectorAll('[data-step]')) {
-  const [k, d] = b.dataset.step.split(':');
-  let rep = null;
-  const step = (e) => {
-    const fine = e?.shiftKey ? 0.1 : 1;
-    if (k === 'angle') setAim(G.aim.angle + Number(d) * fine, G.aim.power);
-    else setAim(G.aim.angle, G.aim.power + Number(d) * fine);
-  };
-  b.addEventListener('pointerdown', (e) => { step(e); clearInterval(rep); rep = setInterval(step, 90); });
-  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => clearInterval(rep));
-}
 
 // ---------- menu ----------
 $('btn-menu').onclick = () => { $('menu').hidden = false; };
@@ -1138,21 +1124,42 @@ function wireSocket(sock) {
 // ---------- input ----------
 const canvas = $('canvas');
 const renderer = new Renderer(canvas);
+const SLING_DEAD_PX = 18;   // pulls shorter than this cancel
+const SLING_FULL_PX = 170;  // screen px of stretch for 100% power
 const fx = new FX();
 fx.shakeScale = prefs.shake;
 const input = createInput(canvas, {
+  // Slingshot aiming: press anywhere, pull back, release to fire.
+  // The shot goes opposite to the pull; the stretch length sets the power.
   drag(cx, cy, phase) {
     audio.unlock();
-    if (!myTurn() || G.play || G.moving) return;
+    if (!myTurn() || G.play || G.moving) { G.sling = null; return; }
     $('weapon-list').hidden = true;
-    const w = renderer.clientToWorld(cx, cy, G.cam);
-    const v = G.vt[G.turn.player];
-    const dx = w.x - v.x, dy = w.y - (v.y - TURRET_PIVOT);
-    let ang = Math.atan2(-dy, dx) / DEG;
-    if (ang < 0) ang = dx >= 0 ? 0 : 180;
-    const pw = Math.hypot(dx, dy) / 2.6;
-    if (phase === 'start' && Math.hypot(dx, dy) < 12) return;
-    setAim(ang, pw);
+    const rect = canvas.getBoundingClientRect();
+    const x = cx - rect.left, y = cy - rect.top;
+    if (phase === 'start') {
+      G.sling = { ax: x, ay: y, px: x, py: y, power: 0, cancel: true, angle0: G.aim.angle, power0: G.aim.power };
+      return;
+    }
+    const s = G.sling;
+    if (!s) return;
+    s.px = x; s.py = y;
+    const dx = s.ax - x, dy = s.ay - y;
+    const stretch = Math.hypot(dx, dy);
+    s.cancel = stretch < SLING_DEAD_PX;
+    if (!s.cancel) {
+      let ang = Math.atan2(-dy, dx) / DEG;
+      if (ang < 0) ang = dx >= 0 ? 0 : 180;
+      const cap = G.turn.frozen ? FROZEN_POWER_CAP : 100;
+      s.power = Math.min(cap, ((stretch - SLING_DEAD_PX) / (SLING_FULL_PX - SLING_DEAD_PX)) * 100);
+      setAim(ang, s.power);
+    } else {
+      setAim(s.angle0, s.power0); // back at the anchor: the old aim comes back
+    }
+    if (phase === 'end') {
+      G.sling = null;
+      if (!s.cancel) { G.aimedOnce = true; fire(); }
+    }
   },
   key(action, fine, repeat) {
     audio.unlock();
@@ -1269,6 +1276,8 @@ function buildScene() {
   return {
     time: G.time, cam: G.cam, tanks, mines: st.mines, history: G.play?.history || [], aim, survival, wind: st.wind,
     tracers: [...G.tracers.values()],
+    sling: myTurn() && !G.play ? G.sling : null,
+    slingColor: G.turn ? G.match.players[G.turn.player].color : '#fff',
   };
 }
 
