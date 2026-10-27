@@ -2,160 +2,72 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Workspace</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='1' width='12' height='14' rx='1.5' fill='%23e8eaed' stroke='%239aa0a6'/%3E%3Cpath d='M5 5h6M5 8h6M5 11h4' stroke='%239aa0a6'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Game Arcade</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='4' width='14' height='9' rx='3' fill='%23555'/%3E%3Ccircle cx='5' cy='8.5' r='1.5' fill='%23fff'/%3E%3Ccircle cx='11' cy='8.5' r='1.5' fill='%23fff'/%3E%3C/svg%3E">
+  <script>
+    // Old invite links (/?room=CODE) go straight to the right game:
+    // Tiny Racers codes are 4 letters, Shell Shock Arena codes are 5 characters.
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var room = (q.get('room') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      var game = q.get('game');
+      if (room.length === 4) location.replace('race/?room=' + room);
+      else if (room.length === 5) location.replace('tanks/?room=' + room);
+      else if (game === 'race' || game === 'tanks') location.replace(game + '/');
+    })();
+  </script>
+  <style>
+    :root { --bg: #f4f5f7; --card: #fff; --ink: #1f2328; --muted: #6b7280; --line: #dfe2e6; --accent: #2563eb; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #15171b; --card: #1f2228; --ink: #e8eaed; --muted: #9aa0a6; --line: #2e323a; --accent: #6ea8fe; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+    main { width: 100%; max-width: 760px; }
+    h1 { font-size: 22px; margin: 0 0 4px; font-weight: 600; }
+    p.sub { margin: 0 0 20px; color: var(--muted); }
+    .games { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    a.game { display: block; text-decoration: none; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+      transition: transform .15s ease, box-shadow .15s ease, border-color .15s; }
+    a.game:hover, a.game:focus-visible { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.12); border-color: var(--accent); outline: none; }
+    .art { height: 140px; display: block; width: 100%; }
+    .info { padding: 14px 16px 16px; }
+    .info b { font-size: 17px; display: block; }
+    .info span { color: var(--muted); font-size: 13.5px; }
+    .tag { display: inline-block; margin-top: 8px; font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  </style>
 </head>
 <body>
-  <!-- HOME -->
-  <section id="home" class="screen active">
-    <div class="panel">
-      <h1>Tiny Racers</h1>
-      <p class="sub">Press B any time to hide the screen.</p>
-      <label>Name <input id="name" maxlength="12" autocomplete="off" spellcheck="false"></label>
-      <div class="label">Car colour</div>
-      <div id="colors" class="swatches"></div>
-      <div class="row">
-        <button id="btn-create">Create Room</button>
-        <button id="btn-quick">Quick Play</button>
-      </div>
-      <div class="row">
-        <input id="join-code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
-        <button id="btn-join">Join Room</button>
-      </div>
-      <p id="home-error" class="error"></p>
-      <p class="hint">Arrows / WASD to drive · Space boost · R respawn · Esc menu · M sound · B hide · F3 stats</p>
-      <p class="hint">Drift to fill the boost meter faster; at 100% press Space.</p>
+  <main>
+    <h1>Which game do you want to play?</h1>
+    <p class="sub">Both games are online multiplayer: create a room and send the link to your friends.</p>
+    <div class="games">
+      <a class="game" href="race/" id="pick-race">
+        <svg class="art" viewBox="0 0 320 140" aria-hidden="true">
+          <rect width="320" height="140" fill="#eef1f4"/>
+          <path d="M20 110 C 80 20, 240 20, 300 110" fill="none" stroke="#c9ced6" stroke-width="26" stroke-linecap="round"/>
+          <path d="M20 110 C 80 20, 240 20, 300 110" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="8 8"/>
+          <rect x="140" y="38" width="10" height="20" rx="2" fill="#5b7db1" transform="rotate(80 145 48)"/>
+          <rect x="190" y="50" width="10" height="20" rx="2" fill="#b1655b" transform="rotate(110 195 60)"/>
+        </svg>
+        <div class="info"><b>Tiny Racers</b><span>Top-down car racing for up to 8 players, with drifting, boost and 6 tracks.</span><div class="tag">Real-time · 2–8 players</div></div>
+      </a>
+      <a class="game" href="tanks/" id="pick-tanks">
+        <svg class="art" viewBox="0 0 320 140" aria-hidden="true">
+          <defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5fb4f0"/><stop offset="1" stop-color="#d9efff"/></linearGradient></defs>
+          <rect width="320" height="140" fill="url(#sky)"/>
+          <path d="M0 105 C 50 80, 90 95, 130 100 S 220 70, 260 92 S 310 100, 320 96 V140 H0Z" fill="#6aa84f"/>
+          <path d="M0 112 C 50 88, 90 103, 130 108 S 220 78, 260 100 S 310 108, 320 104 V140 H0Z" fill="#5b3d22"/>
+          <path d="M60 86 Q 160 -10 250 74" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="3 6" opacity=".9"/>
+          <g transform="translate(60 92)"><rect x="-14" y="-8" width="28" height="8" rx="3" fill="#e74c3c"/><circle cx="0" cy="-9" r="6" fill="#c0392b"/><rect x="0" y="-12" width="14" height="3" rx="1.5" fill="#333" transform="rotate(-50)"/></g>
+          <g transform="translate(258 86)"><rect x="-14" y="-8" width="28" height="8" rx="3" fill="#3498db"/><circle cx="0" cy="-9" r="6" fill="#2471a3"/><rect x="-14" y="-12" width="14" height="3" rx="1.5" fill="#333" transform="rotate(40)"/></g>
+          <circle cx="250" cy="74" r="10" fill="#ffd166" opacity=".9"/>
+        </svg>
+        <div class="info"><b>Shell Shock Arena</b><span>Turn-based artillery: draft 40 weapons, aim with angle and power, blow up the terrain.</span><div class="tag">Turn-based · 2–4 players · bots</div></div>
+      </a>
     </div>
-  </section>
-
-  <!-- LOBBY -->
-  <section id="lobby" class="screen">
-    <div class="panel wide">
-      <div class="lobby-head">
-        <h2>Room <span id="room-code" class="code"></span></h2>
-        <button id="btn-copy" class="small">Copy link</button>
-        <span id="copy-ok" class="hint"></span>
-      </div>
-      <div class="lobby-grid">
-        <div>
-          <div class="label">Players (<span id="player-count">0</span>/8)</div>
-          <ul id="player-list" class="players"></ul>
-          <div class="label">Colour</div>
-          <div id="lobby-colors" class="swatches"></div>
-          <label class="check"><input type="checkbox" id="bots"> Fill empty slots with bots</label>
-          <p class="hint">Laps: <b>10</b></p>
-        </div>
-        <div>
-          <div class="label">Track <span id="map-hint" class="hint"></span></div>
-          <div id="maps" class="maps"></div>
-        </div>
-      </div>
-      <div class="row">
-        <button id="btn-ready">Ready</button>
-        <button id="btn-start" class="primary">Start Race</button>
-        <button id="btn-leave" class="small ghost">Leave</button>
-      </div>
-      <p id="lobby-error" class="error"></p>
-      <div id="lobby-session" class="session"></div>
-    </div>
-  </section>
-
-  <!-- GAME -->
-  <section id="game" class="screen">
-    <canvas id="canvas"></canvas>
-    <div id="hud">
-      <!-- two stacked columns, so panels can never overlap each other -->
-      <div id="hud-left">
-        <div id="hud-main">
-          <div id="hud-pos">P-/-</div>
-          <div id="hud-lap">Lap -/10</div>
-          <div class="hud-row"><span>Lap</span><b id="hud-laptime">0:00.000</b></div>
-          <div class="hud-row"><span>Best</span><b id="hud-best">-</b></div>
-          <div class="hud-row"><span>Total</span><b id="hud-total">0:00.000</b></div>
-          <div id="speedbar"><div id="speedfill"></div></div>
-          <div id="boost">
-            <div class="hud-row"><span id="boost-label">Boost</span><b id="boost-pct">0%</b></div>
-            <div id="boostbar"><div id="boostfill"></div></div>
-          </div>
-        </div>
-        <button id="btn-respawn" class="small">Respawn (R)</button>
-      </div>
-      <div id="hud-right">
-        <ol id="board"></ol>
-        <canvas id="minimap" width="180" height="120"></canvas>
-      </div>
-      <div id="lights"><i></i><i></i><i></i><i></i><i></i><div id="count"></div></div>
-      <div id="banner"></div>
-      <div id="wrongway">WRONG WAY</div>
-      <div id="stats"></div>
-      <button id="btn-menu" class="small">☰</button>
-    </div>
-    <div id="touch">
-      <div class="tgroup left"><button data-key="left">◀</button><button data-key="right">▶</button></div>
-      <div class="tgroup right"><button data-key="boost" class="boost">BOOST</button><button data-key="down">BRAKE</button><button data-key="up">GAS</button></div>
-    </div>
-    <div id="pause" class="overlay">
-      <div class="panel">
-        <h2>Menu</h2>
-        <p class="hint">The race keeps running while this menu is open.</p>
-        <button id="btn-resume">Resume</button>
-        <button id="btn-hide">Hide screen (B)</button>
-        <button id="btn-mute">Mute</button>
-        <button id="btn-quit" class="ghost">Leave Race</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- RESULTS -->
-  <section id="results" class="screen">
-    <div class="panel wide">
-      <h2>Results <span id="results-map" class="hint"></span></h2>
-      <div id="podium" class="podium"></div>
-      <table id="results-table">
-        <thead><tr><th>Pos</th><th>Driver</th><th>Total time</th><th>Best lap</th><th>Gap to winner</th><th>Status</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <div class="label">Room leaderboard (25-18-15-12-10-8-6-4)</div>
-      <div id="results-session" class="session"></div>
-      <div class="row">
-        <select id="again-map"></select>
-        <button id="btn-again" class="primary">Race Again</button>
-        <button id="btn-lobby">Back to Lobby</button>
-        <button id="btn-leave2" class="small ghost">Leave Room</button>
-      </div>
-      <p id="results-wait" class="hint"></p>
-    </div>
-  </section>
-
-  <!-- boss key overlay (B or `): a plain notes page -->
-  <div id="boss" aria-hidden="true">
-    <div class="doc">
-      <div class="doc-title">Meeting notes</div>
-      <div class="doc-meta">Weekly sync · Attendees: team</div>
-      <h3>Agenda</h3>
-      <ol>
-        <li>Status of open items from last week</li>
-        <li>Timeline review and next milestones</li>
-        <li>Risks, blockers and owners</li>
-      </ol>
-      <h3>Notes</h3>
-      <ul>
-        <li>Most open items are on track; two need follow-up by Friday.</li>
-        <li>Draft timeline shared; feedback requested before the next sync.</li>
-        <li>Dependencies to be confirmed with the other teams this week.</li>
-      </ul>
-      <h3>Action items</h3>
-      <ul>
-        <li>Update the tracker with current status</li>
-        <li>Circulate summary to the group</li>
-        <li>Schedule follow-up review</li>
-      </ul>
-    </div>
-  </div>
-
-  <script src="config.js"></script>
-  <script type="module" src="main.js"></script>
+  </main>
 </body>
 </html>

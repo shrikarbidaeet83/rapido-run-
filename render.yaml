@@ -1,9 +1,11 @@
 # Render blueprint for the game server (Socket.IO needs a long-running process).
+# Serves both games: / (chooser), /race/ (Tiny Racers) and /tanks/ (Shell Shock Arena).
 services:
   - type: web
     name: tiny-racers-server
     runtime: node
     plan: free
+    region: singapore
     buildCommand: npm install --omit=dev
     startCommand: npm start
     healthCheckPath: /health

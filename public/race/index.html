@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Workspace</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='1' width='12' height='14' rx='1.5' fill='%23e8eaed' stroke='%239aa0a6'/%3E%3Cpath d='M5 5h6M5 8h6M5 11h4' stroke='%239aa0a6'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- HOME -->
+  <section id="home" class="screen active">
+    <div class="panel">
+      <h1>Tiny Racers</h1>
+      <p class="sub">Press B any time to hide the screen.</p>
+      <label>Name <input id="name" maxlength="12" autocomplete="off" spellcheck="false"></label>
+      <div class="label">Car colour</div>
+      <div id="colors" class="swatches"></div>
+      <div class="row">
+        <button id="btn-create">Create Room</button>
+        <button id="btn-quick">Quick Play</button>
+      </div>
+      <div class="row">
+        <input id="join-code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
+        <button id="btn-join">Join Room</button>
+      </div>
+      <p id="home-error" class="error"></p>
+      <p class="hint">Arrows / WASD to drive · Space boost · R respawn · Esc menu · M sound · B hide · F3 stats</p>
+      <p class="hint">Drift to fill the boost meter faster; at 100% press Space.</p>
+    </div>
+  </section>
+
+  <!-- LOBBY -->
+  <section id="lobby" class="screen">
+    <div class="panel wide">
+      <div class="lobby-head">
+        <h2>Room <span id="room-code" class="code"></span></h2>
+        <button id="btn-copy" class="small">Copy link</button>
+        <span id="copy-ok" class="hint"></span>
+      </div>
+      <div class="lobby-grid">
+        <div>
+          <div class="label">Players (<span id="player-count">0</span>/8)</div>
+          <ul id="player-list" class="players"></ul>
+          <div class="label">Colour</div>
+          <div id="lobby-colors" class="swatches"></div>
+          <label class="check"><input type="checkbox" id="bots"> Fill empty slots with bots</label>
+          <p class="hint">Laps: <b>10</b></p>
+        </div>
+        <div>
+          <div class="label">Track <span id="map-hint" class="hint"></span></div>
+          <div id="maps" class="maps"></div>
+        </div>
+      </div>
+      <div class="row">
+        <button id="btn-ready">Ready</button>
+        <button id="btn-start" class="primary">Start Race</button>
+        <button id="btn-leave" class="small ghost">Leave</button>
+      </div>
+      <p id="lobby-error" class="error"></p>
+      <div id="lobby-session" class="session"></div>
+    </div>
+  </section>
+
+  <!-- GAME -->
+  <section id="game" class="screen">
+    <canvas id="canvas"></canvas>
+    <div id="hud">
+      <!-- two stacked columns, so panels can never overlap each other -->
+      <div id="hud-left">
+        <div id="hud-main">
+          <div id="hud-pos">P-/-</div>
+          <div id="hud-lap">Lap -/10</div>
+          <div class="hud-row"><span>Lap</span><b id="hud-laptime">0:00.000</b></div>
+          <div class="hud-row"><span>Best</span><b id="hud-best">-</b></div>
+          <div class="hud-row"><span>Total</span><b id="hud-total">0:00.000</b></div>
+          <div id="speedbar"><div id="speedfill"></div></div>
+          <div id="boost">
+            <div class="hud-row"><span id="boost-label">Boost</span><b id="boost-pct">0%</b></div>
+            <div id="boostbar"><div id="boostfill"></div></div>
+          </div>
+        </div>
+        <button id="btn-respawn" class="small">Respawn (R)</button>
+      </div>
+      <div id="hud-right">
+        <ol id="board"></ol>
+        <canvas id="minimap" width="180" height="120"></canvas>
+      </div>
+      <div id="lights"><i></i><i></i><i></i><i></i><i></i><div id="count"></div></div>
+      <div id="banner"></div>
+      <div id="wrongway">WRONG WAY</div>
+      <div id="stats"></div>
+      <button id="btn-menu" class="small">☰</button>
+    </div>
+    <div id="touch">
+      <div class="tgroup left"><button data-key="left">◀</button><button data-key="right">▶</button></div>
+      <div class="tgroup right"><button data-key="boost" class="boost">BOOST</button><button data-key="down">BRAKE</button><button data-key="up">GAS</button></div>
+    </div>
+    <div id="pause" class="overlay">
+      <div class="panel">
+        <h2>Menu</h2>
+        <p class="hint">The race keeps running while this menu is open.</p>
+        <button id="btn-resume">Resume</button>
+        <button id="btn-hide">Hide screen (B)</button>
+        <button id="btn-mute">Mute</button>
+        <button id="btn-quit" class="ghost">Leave Race</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="results" class="screen">
+    <div class="panel wide">
+      <h2>Results <span id="results-map" class="hint"></span></h2>
+      <div id="podium" class="podium"></div>
+      <table id="results-table">
+        <thead><tr><th>Pos</th><th>Driver</th><th>Total time</th><th>Best lap</th><th>Gap to winner</th><th>Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="label">Room leaderboard (25-18-15-12-10-8-6-4)</div>
+      <div id="results-session" class="session"></div>
+      <div class="row">
+        <select id="again-map"></select>
+        <button id="btn-again" class="primary">Race Again</button>
+        <button id="btn-lobby">Back to Lobby</button>
+        <button id="btn-leave2" class="small ghost">Leave Room</button>
+      </div>
+      <p id="results-wait" class="hint"></p>
+    </div>
+  </section>
+
+  <!-- boss key overlay (B or `): a plain notes page -->
+  <div id="boss" aria-hidden="true">
+    <div class="doc">
+      <div class="doc-title">Meeting notes</div>
+      <div class="doc-meta">Weekly sync · Attendees: team</div>
+      <h3>Agenda</h3>
+      <ol>
+        <li>Status of open items from last week</li>
+        <li>Timeline review and next milestones</li>
+        <li>Risks, blockers and owners</li>
+      </ol>
+      <h3>Notes</h3>
+      <ul>
+        <li>Most open items are on track; two need follow-up by Friday.</li>
+        <li>Draft timeline shared; feedback requested before the next sync.</li>
+        <li>Dependencies to be confirmed with the other teams this week.</li>
+      </ul>
+      <h3>Action items</h3>
+      <ul>
+        <li>Update the tracker with current status</li>
+        <li>Circulate summary to the group</li>
+        <li>Schedule follow-up review</li>
+      </ul>
+    </div>
+  </div>
+
+  <script src="../config.js"></script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

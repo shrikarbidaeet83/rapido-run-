@@ -4,6 +4,7 @@
   "installCommand": "echo \"no install needed for the static front end\"",
   "buildCommand": "node scripts/build-static.js",
   "outputDirectory": "dist",
+  "trailingSlash": true,
   "headers": [
     { "source": "/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }] }
   ]

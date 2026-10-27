@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Server } from 'socket.io';
 import { Room, getTrack } from './room.js';
+import { attachTanks } from './tanks/index.js';
 import { MAPS } from '../shared/maps.js';
 import { validateTrack } from '../shared/track.js';
 import { MAX_PLAYERS, RATE_LIMIT_PER_SEC, ROOM_CODE_LEN } from '../shared/constants.js';
@@ -31,13 +32,13 @@ export function corsCheck(list) {
   return (origin, cb) => cb(null, !origin || regexes.some((r) => r.test(origin)));
 }
 
-export function createGameServer({ corsOrigin = process.env.CORS_ORIGIN } = {}) {
+export function createGameServer({ corsOrigin = process.env.CORS_ORIGIN, tanksFast = 1 } = {}) {
   validateAllMaps();
   const app = express();
   app.disable('x-powered-by');
   app.use('/shared', express.static(path.join(ROOT, 'shared')));
   app.use(express.static(path.join(ROOT, 'public')));
-  app.get('/health', (_req, res) => res.json({ ok: true, rooms: rooms.size }));
+  app.get('/health', (_req, res) => res.json({ ok: true, rooms: rooms.size, tankRooms: tanks.rooms.size }));
 
   const httpServer = http.createServer(app);
   const origin = corsCheck(corsOrigin);
@@ -55,6 +56,8 @@ export function createGameServer({ corsOrigin = process.env.CORS_ORIGIN } = {}) 
     },
   });
   const rooms = new Map();
+  // Shell Shock Arena lives on its own namespace (/tanks) of the same server
+  const tanks = attachTanks(io, { fast: tanksFast });
 
   const send = (player, event, data) => {
     const sock = io.sockets.sockets.get(player.socketId);
@@ -179,12 +182,13 @@ export function createGameServer({ corsOrigin = process.env.CORS_ORIGIN } = {}) 
   });
 
   return {
-    app, io, httpServer, rooms,
+    app, io, httpServer, rooms, tanks,
     listen(port) {
       return new Promise((resolve) => httpServer.listen(port, () => resolve(httpServer.address().port)));
     },
     close() {
       for (const room of rooms.values()) room.destroy();
+      tanks.close();
       io.close();
       return new Promise((resolve) => httpServer.close(() => resolve()));
     },
@@ -194,5 +198,5 @@ export function createGameServer({ corsOrigin = process.env.CORS_ORIGIN } = {}) 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const server = createGameServer();
   const port = await server.listen(Number(process.env.PORT) || 3000);
-  console.log(`Tiny Racers running on http://localhost:${port}`);
+  console.log(`Game server running on http://localhost:${port}  (/race/ Tiny Racers, /tanks/ Shell Shock Arena)`);
 }

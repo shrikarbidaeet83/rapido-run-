@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#10131a">
+  <title>Shell Shock Arena</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='9' width='12' height='4' rx='2' fill='%23e74c3c'/%3E%3Ccircle cx='8' cy='9' r='3' fill='%23c0392b'/%3E%3Crect x='8' y='5' width='6' height='1.6' rx='.8' fill='%23333' transform='rotate(-30 8 6)'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- HOME -->
+  <section id="home" class="screen active">
+    <div class="home-wrap">
+      <h1 class="logo">Shell Shock <span>Arena</span></h1>
+      <p class="tagline">Draft your arsenal. Aim. Fire. Wreck the terrain.</p>
+      <div class="card home-card">
+        <div id="invite-note" class="invite" hidden>You're invited to room <b id="invite-code"></b></div>
+        <div class="home-grid">
+          <div>
+            <label class="field">Your name <input id="name" maxlength="12" autocomplete="off" spellcheck="false"></label>
+            <div class="label">Tank</div>
+            <div id="styles" class="chips"></div>
+            <div id="colors" class="swatches"></div>
+          </div>
+          <canvas id="tank-preview" width="260" height="130"></canvas>
+        </div>
+        <button id="btn-join-invite" class="big primary" hidden>Join Lobby</button>
+        <div class="grid-buttons">
+          <button id="btn-create" class="primary">Create Room</button>
+          <button id="btn-quick">Quick Match</button>
+          <button id="btn-bot">Play vs Bot</button>
+          <button id="btn-local">Local 2-Player</button>
+        </div>
+        <div class="row join-row">
+          <input id="join-code" maxlength="5" placeholder="CODE" autocomplete="off" spellcheck="false">
+          <button id="btn-join">Join with Code</button>
+        </div>
+        <p id="home-error" class="error" role="alert"></p>
+      </div>
+      <a href="../" class="back">← All games</a>
+    </div>
+  </section>
+
+  <!-- LOBBY -->
+  <section id="lobby" class="screen">
+    <div class="lobby-wrap">
+      <div class="lobby-head card">
+        <div class="room-title">
+          <span class="label">Room</span>
+          <span id="room-code" class="code"></span>
+          <span id="room-privacy" class="badge"></span>
+        </div>
+        <div class="invite-actions">
+          <button id="btn-copy" class="small">Copy Link</button>
+          <button id="btn-share" class="small">Share</button>
+          <button id="btn-qr" class="small">QR</button>
+          <span id="copy-ok" class="hint"></span>
+        </div>
+        <div id="qr-box" class="qr-box" hidden><canvas id="qr" width="180" height="180"></canvas><p class="hint">Scan to join</p></div>
+      </div>
+      <div class="lobby-grid">
+        <div class="card">
+          <div class="label">Players <span id="player-count"></span></div>
+          <ul id="slots" class="slots"></ul>
+          <div id="bot-add" class="row">
+            <span class="hint">Add bot:</span>
+            <button class="small" data-bot="easy">Easy</button>
+            <button class="small" data-bot="medium">Medium</button>
+            <button class="small" data-bot="hard">Hard</button>
+          </div>
+          <div id="spectators" class="hint"></div>
+          <div class="row">
+            <button id="btn-ready" class="big">Ready</button>
+            <button id="btn-start" class="big primary">Start</button>
+          </div>
+          <p id="lobby-error" class="error" role="alert"></p>
+          <button id="btn-leave" class="small ghost">Leave room</button>
+        </div>
+        <div class="card">
+          <div class="label">Settings <span id="settings-note" class="hint"></span></div>
+          <div id="settings" class="settings"></div>
+        </div>
+        <div class="card chat-card">
+          <div class="label">Chat</div>
+          <ul id="chat-log" class="chat-log"></ul>
+          <div class="emoji-bar" data-emoji-bar></div>
+          <form id="chat-form" class="row"><input id="chat-input" maxlength="120" placeholder="Say something…" autocomplete="off"><button class="small">Send</button></form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DRAFT -->
+  <section id="draft" class="screen">
+    <div class="draft-wrap">
+      <div class="draft-head">
+        <h2>Weapon Draft</h2>
+        <div id="draft-status" class="draft-status"></div>
+        <div class="timer-bar"><div id="draft-timer"></div></div>
+      </div>
+      <div class="draft-grid">
+        <div id="pool" class="pool"></div>
+        <aside class="card draft-side">
+          <div id="weapon-info" class="weapon-info"><p class="hint">Tap a weapon to see what it does.</p></div>
+          <button id="btn-pick" class="big primary" disabled>Pick</button>
+          <div id="draft-players"></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- GAME -->
+  <section id="game" class="screen">
+    <canvas id="canvas"></canvas>
+    <div id="hud-top">
+      <div id="chips" class="chips-top"></div>
+      <div class="hud-center">
+        <svg id="timer-ring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="19" class="ring-bg"/><circle id="timer-arc" cx="22" cy="22" r="19" class="ring-fg"/><text id="timer-text" x="22" y="27">--</text></svg>
+        <div class="wind"><div class="wind-label">WIND</div><div id="wind-arrow" class="wind-arrow"></div><div id="wind-val">0</div></div>
+        <div id="round" class="round"></div>
+      </div>
+    </div>
+    <div id="banner" class="banner"></div>
+    <div id="toast" class="toast"></div>
+    <div id="hud-bottom">
+      <div id="weapon-card" class="weapon-card">
+        <button id="w-prev" class="icon-btn" aria-label="Previous weapon">‹</button>
+        <button id="w-open" class="w-main"><span id="w-icon" class="w-icon"></span><span class="w-text"><b id="w-name"></b><small id="w-desc"></small></span></button>
+        <button id="w-next" class="icon-btn" aria-label="Next weapon">›</button>
+      </div>
+      <div class="ctrl">
+        <span class="ctrl-label">Angle <b id="angle-val">0</b>°</span>
+        <div class="ctrl-row"><button class="icon-btn" data-step="angle:1" aria-label="Aim left">←</button><input id="angle" type="range" min="0" max="180" step="0.1" dir="rtl"><button class="icon-btn" data-step="angle:-1" aria-label="Aim right">→</button></div>
+      </div>
+      <div class="ctrl">
+        <span class="ctrl-label">Power <b id="power-val">0</b></span>
+        <div class="ctrl-row"><button class="icon-btn" data-step="power:-1">−</button><input id="power" type="range" min="0" max="100" step="0.1"><button class="icon-btn" data-step="power:1">+</button></div>
+      </div>
+      <div class="ctrl moves">
+        <span class="ctrl-label">Moves <b id="moves-val">4</b></span>
+        <div class="ctrl-row"><button id="move-left" class="icon-btn">◀</button><button id="move-right" class="icon-btn">▶</button></div>
+      </div>
+      <button id="btn-fire" class="fire">FIRE</button>
+    </div>
+    <div id="weapon-list" class="weapon-list" hidden></div>
+    <div id="game-social">
+      <div class="emoji-bar" data-emoji-bar></div>
+      <button id="btn-chat" class="icon-btn" aria-label="Chat">💬</button>
+    </div>
+    <div id="chat-pop" class="chat-pop card" hidden>
+      <ul id="chat-log-game" class="chat-log"></ul>
+      <form id="chat-form-game" class="row"><input id="chat-input-game" maxlength="120" placeholder="Say something…" autocomplete="off"><button class="small">Send</button></form>
+    </div>
+    <button id="btn-menu" class="icon-btn menu-btn" aria-label="Menu">☰</button>
+    <div id="menu" class="overlay" hidden>
+      <div class="card menu-card">
+        <h2>Menu</h2>
+        <label class="field">Volume <input id="volume" type="range" min="0" max="1" step="0.05"></label>
+        <label class="check"><input type="checkbox" id="mute"> Mute (M)</label>
+        <label class="field">Screen shake
+          <select id="shake"><option value="1">Full</option><option value="0.5">Reduced</option><option value="0">Off</option></select>
+        </label>
+        <p class="hint">Keys: ←/→ angle · ↑/↓ power (Shift = fine) · Space fire · A/D move · Q/E weapon · M mute</p>
+        <button id="btn-resume" class="primary">Resume</button>
+        <button id="btn-quit" class="ghost">Leave match</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="results" class="screen">
+    <canvas id="confetti"></canvas>
+    <div class="results-wrap">
+      <div class="winner-head">
+        <div class="trophy">🏆</div>
+        <canvas id="winner-tank" width="200" height="110"></canvas>
+        <h2 id="winner-title"></h2>
+      </div>
+      <div class="card table-card">
+        <table id="results-table">
+          <thead><tr><th>#</th><th>Player</th><th id="score-head">Score</th><th>Damage</th><th>Best shot</th><th>Accuracy</th><th>Self-dmg</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="awards" class="awards"></div>
+      <div class="card"><div class="label">Room leaderboard (wins)</div><div id="session" class="session"></div></div>
+      <div class="row center">
+        <button id="btn-rematch" class="big primary">Rematch</button>
+        <button id="btn-to-lobby" class="big">Back to Lobby</button>
+        <button id="btn-share-result" class="big">Share Result</button>
+      </div>
+      <p id="results-wait" class="hint center"></p>
+    </div>
+  </section>
+
+  <div id="rotate"><div>📱↻</div><p>Rotate your phone to landscape</p></div>
+  <div id="conn" class="conn" hidden></div>
+
+  <script src="../config.js"></script>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

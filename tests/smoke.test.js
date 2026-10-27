@@ -8,31 +8,7 @@ import path from 'node:path';
 import express from 'express';
 import { createGameServer } from '../server/index.js';
 import { buildStatic } from '../scripts/build-static.js';
-
-async function launchChromium() {
-  let chromium;
-  try { ({ chromium } = await import('playwright')); } catch { return { skip: 'playwright is not installed (npm i -D playwright)' }; }
-  try { return { browser: await chromium.launch() }; } catch (err) {
-    // fall back to any Chromium build Playwright already downloaded on this machine
-    const roots = [process.env.PLAYWRIGHT_BROWSERS_PATH, path.join(process.env.LOCALAPPDATA || '', 'ms-playwright'),
-      path.join(os.homedir(), '.cache', 'ms-playwright'), path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright')].filter(Boolean);
-    const candidates = [];
-    for (const root of roots) {
-      if (!fs.existsSync(root)) continue;
-      for (const dir of fs.readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort().reverse()) {
-        for (const rel of ['chrome-win64/chrome.exe', 'chrome-win/chrome.exe', 'chrome-linux64/chrome', 'chrome-linux/chrome',
-          'chrome-mac/Chromium.app/Contents/MacOS/Chromium', 'chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium']) {
-          const exe = path.join(root, dir, rel);
-          if (fs.existsSync(exe)) candidates.push(exe);
-        }
-      }
-    }
-    for (const executablePath of candidates) {
-      try { return { browser: await chromium.launch({ executablePath }) }; } catch { /* try next */ }
-    }
-    return { skip: `no usable Chromium (${err.message.split('\n')[0]})` };
-  }
-}
+import { launchChromium } from './chromium.js';
 
 async function twoPlayerRace(browser, url, shotPrefix) {
   const errors = [];
@@ -104,7 +80,7 @@ test('browser smoke test: create room, join, race, both see 2 moving cars', { ti
   const server = createGameServer();
   const port = await server.listen(0);
   try {
-    await twoPlayerRace(browser, `http://localhost:${port}/`, 'smoke');
+    await twoPlayerRace(browser, `http://localhost:${port}/race/`, 'smoke');
   } finally {
     await browser.close();
     await server.close();
@@ -125,12 +101,12 @@ test('split hosting: static front end + separate game server with CORS', { timeo
   const blockedPort = await blocked.listen(0);
   try {
     buildStatic(outDir, `http://127.0.0.1:${port}`);
-    await twoPlayerRace(browser, `${webUrl}/`, 'split');
+    await twoPlayerRace(browser, `${webUrl}/race/`, 'split');
 
     // an origin that is not allowed cannot connect
     buildStatic(outDir, `http://127.0.0.1:${blockedPort}`);
     const page = await browser.newPage();
-    await page.goto(`${webUrl}/`);
+    await page.goto(`${webUrl}/race/`);
     await page.waitForFunction(() => /Connecting to the game server/.test(document.getElementById('home-error').textContent), null, { timeout: 15000 });
     assert.equal(blocked.io.engine.clientsCount, 0);
     await page.close();

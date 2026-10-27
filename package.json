@@ -1,7 +1,7 @@
 {
   "name": "tiny-racers",
   "version": "1.0.0",
-  "description": "8-player online 2D top-down car racing game (Canvas + Socket.IO)",
+  "description": "Browser game arcade: Tiny Racers (8-player top-down racing) and Shell Shock Arena (turn-based artillery), Canvas + Socket.IO",
   "type": "module",
   "main": "server/index.js",
   "scripts": {
