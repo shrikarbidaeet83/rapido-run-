@@ -2,7 +2,8 @@
 
 import { WORLD_W, WORLD_H, TURRET_PIVOT, TURRET_LEN, TANK_HP } from '/shared/tanks/constants.js';
 import { getMap } from '/shared/tanks/maps.js';
-import { getWeapon, WEAPON_IDS } from '/shared/tanks/weapons.js';
+import { getWeapon, WEAPON_IDS, weaponPower } from '/shared/tanks/weapons.js';
+import { FRAME_STRIDE } from '/shared/tanks/simulate.js';
 import { glowSprite } from './fx.js';
 
 const DEG = Math.PI / 180;
@@ -275,9 +276,11 @@ export class Renderer {
     this.cw = w; this.ch = h; this.dpr = dpr;
     this.canvas.width = Math.round(w * dpr);
     this.canvas.height = Math.round(h * dpr);
-    this.scale = Math.min(w / WORLD_W, h / WORLD_H);
+    // Portrait: show part of the map, tall enough to play, and let the camera follow the action.
+    this.portrait = h > w * 1.05;
+    this.scale = this.portrait ? Math.min((h * 0.58) / WORLD_H, w / 520) : Math.min(w / WORLD_W, h / WORLD_H);
     this.ox = (w - WORLD_W * this.scale) / 2;
-    this.oy = (h - WORLD_H * this.scale) / 2;
+    this.oy = this.portrait ? (h - WORLD_H * this.scale) * 0.45 : (h - WORLD_H * this.scale) / 2;
     const q = this.scale * dpr > 1.25 ? 2 : 1;
     if (q !== this.q || this.terrainCanvas.width !== WORLD_W * q) {
       this.q = q;
@@ -345,6 +348,12 @@ export class Renderer {
     return { s, tx: this.ox + this.scale * WORLD_W / 2 - cam.x * s + sx * this.scale, ty: this.oy + this.scale * WORLD_H / 2 - cam.y * s + sy * this.scale };
   }
 
+  // Half the visible world size at a zoom (bigger than the map = the whole map fits).
+  viewHalf(zoom) {
+    const s = this.scale * zoom;
+    return { hw: this.cw / 2 / s, hh: this.ch / 2 / s };
+  }
+
   clientToWorld(cx, cy, cam) {
     const rect = this.canvas.getBoundingClientRect();
     const T = this.worldTransform(cam, 0);
@@ -360,7 +369,13 @@ export class Renderer {
     const T = this.worldTransform(cam, fx.shake);
     // clip to the letterboxed world
     ctx.save();
-    ctx.beginPath(); ctx.rect(this.ox, this.oy, WORLD_W * this.scale, WORLD_H * this.scale); ctx.clip();
+    if (this.portrait) {
+      // sky behind everything (the ground below the world is drawn with the terrain)
+      ctx.fillStyle = this.map.sky[0]; ctx.fillRect(0, 0, this.cw, this.ch);
+      ctx.beginPath(); ctx.rect(0, 0, this.cw, this.ch); ctx.clip();
+    } else {
+      ctx.beginPath(); ctx.rect(this.ox, this.oy, WORLD_W * this.scale, WORLD_H * this.scale); ctx.clip();
+    }
     // parallax background
     if (this.bg) {
       const dx = cam.x - WORLD_W / 2, dy = cam.y - WORLD_H / 2;
@@ -375,6 +390,7 @@ export class Renderer {
     const view = { l: -T.tx / T.s, t: -T.ty / T.s, r: (this.cw - T.tx) / T.s, b: (this.ch - T.ty) / T.s };
     this.drawAmbientBack(ctx, scene.time);
     ctx.drawImage(this.terrainCanvas, 0, 0, WORLD_W, WORLD_H);
+    if (this.portrait) { ctx.fillStyle = this.map.ground[2]; ctx.fillRect(-WORLD_W, WORLD_H - 1, WORLD_W * 3, WORLD_H * 2); }
     // tracers
     for (const tr of scene.tracers) {
       ctx.save();
@@ -414,68 +430,12 @@ export class Renderer {
     // off-screen arrows (screen space)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawOffscreen(ctx, scene, T);
-    if (scene.sling) this.drawSling(ctx, scene.sling, scene.slingColor);
     if (fx.flash > 0) {
       ctx.globalAlpha = Math.min(0.85, fx.flash);
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, this.cw, this.ch);
       ctx.globalAlpha = 1;
     }
-  }
-
-  // Slingshot in screen space: anchor, stretched band, shot arrow and power ring.
-  drawSling(ctx, s, color) {
-    const { ax, ay, px, py } = s;
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.fillStyle = 'rgba(255,255,255,.18)';
-    ctx.strokeStyle = 'rgba(255,255,255,.7)';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(ax, ay, 14, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    if (s.cancel) {
-      ctx.setLineDash([4, 5]);
-      ctx.beginPath(); ctx.arc(ax, ay, 18, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
-      return;
-    }
-    const k = s.power / 100;
-    const band = `hsl(${120 - k * 120}, 90%, 55%)`;
-    const nx = -(py - ay), ny = px - ax, nl = Math.hypot(nx, ny) || 1;
-    ctx.strokeStyle = band;
-    ctx.lineWidth = 6 - k * 3;
-    for (const sgn of [-1, 1]) {
-      ctx.beginPath();
-      ctx.moveTo(ax + (nx / nl) * 9 * sgn, ay + (ny / nl) * 9 * sgn);
-      ctx.lineTo(px, py);
-      ctx.stroke();
-    }
-    const dx = ax - px, dy = ay - py, d = Math.hypot(dx, dy) || 1;
-    const len = 30 + k * 60, ex = ax + (dx / d) * len, ey = ay + (dy / d) * len;
-    ctx.setLineDash([6, 6]);
-    ctx.strokeStyle = 'rgba(255,255,255,.75)';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke();
-    ctx.setLineDash([]);
-    const a = Math.atan2(dy, dx);
-    ctx.fillStyle = 'rgba(255,255,255,.85)';
-    ctx.beginPath();
-    ctx.moveTo(ex + Math.cos(a) * 8, ey + Math.sin(a) * 8);
-    ctx.lineTo(ex + Math.cos(a + 2.5) * 8, ey + Math.sin(a + 2.5) * 8);
-    ctx.lineTo(ex + Math.cos(a - 2.5) * 8, ey + Math.sin(a - 2.5) * 8);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = color;
-    ctx.beginPath(); ctx.arc(px, py, 12, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.strokeStyle = band; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(px, py, 19, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2); ctx.stroke();
-    ctx.font = '700 14px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.7)';
-    const label = `${Math.round(s.power)}%`;
-    ctx.strokeText(label, px, py - 28);
-    ctx.fillStyle = '#fff';
-    ctx.fillText(label, px, py - 28);
-    ctx.restore();
   }
 
   drawAim(ctx, aim) {
@@ -497,25 +457,25 @@ export class Renderer {
     for (let h = 0; h < hist.length - 1; h++) {
       const p = hist[h];
       const a = (h + 1) / hist.length;
-      for (let i = 0; i < p.length; i += 3) {
+      for (let i = 0; i < p.length; i += FRAME_STRIDE) {
         const st = p[i];
         if (NO_TRAIL.has(st)) continue;
         ctx.globalAlpha = a * 0.6;
-        const s = 4 + a * 8;
+        const s = (4 + a * 8) * lookOf(st).trail;
         ctx.drawImage(glowSprite(styleColor(st)), p[i + 1] - s / 2, p[i + 2] - s / 2, s, s);
       }
     }
     ctx.globalAlpha = 1;
     const cur = hist[hist.length - 1] || [];
-    for (let i = 0; i < cur.length; i += 3) {
+    for (let i = 0; i < cur.length; i += FRAME_STRIDE) {
       const st = cur[i], x = cur[i + 1], y = cur[i + 2];
       if (x < view.l - 80 || x > view.r + 80 || y > view.b + 80) continue;
-      this.drawProjectile(ctx, st, x, y, scene.time);
+      this.drawProjectile(ctx, st, x, y, scene.time, cur[i + 3]);
     }
     ctx.restore();
   }
 
-  drawProjectile(ctx, st, x, y, time) {
+  drawProjectile(ctx, st, x, y, time, heading = 0) {
     const c = styleColor(st);
     switch (st) {
       case 'napalm': case 'lava': {
@@ -573,12 +533,23 @@ export class Renderer {
         ctx.drawImage(glowSprite('#ff6348'), x - 90, y - 30, 180, 60);
         return;
       }
-      default: {
-        const big = st === 'nuke' ? 30 : st === 'meteor' ? 26 : st === 'mega' ? 22 : 16;
-        ctx.drawImage(glowSprite(c), x - big / 2, y - big / 2, big, big);
-        ctx.fillStyle = '#fff';
-        ctx.beginPath(); ctx.arc(x, y, st === 'nuke' ? 5 : 2.6, 0, Math.PI * 2); ctx.fill();
+      case 'tornado': {
+        ctx.globalCompositeOperation = 'source-over';
+        for (let k = 0; k < 9; k++) {
+          const yy = y + 30 - k * 9, w = 6 + k * 4.5;
+          ctx.globalAlpha = 0.55 - k * 0.03;
+          ctx.strokeStyle = k % 2 ? '#c8d0d8' : '#8395a7';
+          ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.ellipse(x + Math.sin(time * 9 + k) * 5, yy, w, 3 + k * 0.4, 0, time * 8 + k, time * 8 + k + 4.5); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'lighter';
+        return;
       }
+      default:
+        ctx.globalCompositeOperation = 'source-over';
+        drawLook(ctx, st, x, y, heading, time);
+        ctx.globalCompositeOperation = 'lighter';
     }
   }
 
@@ -625,10 +596,10 @@ export class Renderer {
     const cur = scene.history[scene.history.length - 1];
     if (!cur) return;
     const top = Math.max(this.oy, 0);
-    for (let i = 0; i < cur.length; i += 3) {
+    for (let i = 0; i < cur.length; i += FRAME_STRIDE) {
       const sy = cur[i + 2] * T.s + T.ty;
       if (sy > top - 4) continue;
-      const sx = Math.max(this.ox + 14, Math.min(this.ox + WORLD_W * this.scale - 14, cur[i + 1] * T.s + T.tx));
+      const sx = Math.max(Math.max(14, this.ox + 14), Math.min(Math.min(this.cw - 14, this.ox + WORLD_W * this.scale - 14), cur[i + 1] * T.s + T.tx));
       const c = styleColor(cur[i]);
       ctx.fillStyle = c;
       ctx.beginPath(); ctx.moveTo(sx, top + 6); ctx.lineTo(sx - 8, top + 18); ctx.lineTo(sx + 8, top + 18); ctx.closePath(); ctx.fill();
@@ -679,7 +650,246 @@ export class Renderer {
   }
 }
 
-const NO_TRAIL = new Set(['napalm', 'lava', 'blackhole', 'acid', 'jet', 'portal', 'acidDrop']);
+// ---------- projectile looks ----------
+// Every weapon's projectile has a shape that says what it is, sized by how hard it hits.
+const LOOK_BY_BEHAVIOR = {
+  shell: 'shell', spread: 'shell', chain: 'shell', splitter: 'shell', crazy: 'shell', hydra: 'shell',
+  sniper: 'bullet', burst: 'bullet', tracer: 'tracer',
+  cluster: 'bomb', homing: 'missile', drill: 'drill', airstrike: 'flare', firework: 'rocket',
+  roller: 'ball', betty: 'ball', skipper: 'disc', dirtball: 'dirt', dirtwave: 'dirt', wall: 'dirt', spike: 'dirt', trench: 'dirt', digger: 'drill',
+  napalm: 'canister', acid: 'canister', volcano: 'canister', quake: 'canister',
+  blackhole: 'orb', lightning: 'orb', ice: 'orb', teleport: 'orb', magnet: 'orb', repulse: 'orb', skylance: 'orb', hail: 'orb', tornado: 'orb',
+  meteor: 'rock', mine: 'mine', minefield: 'mine',
+};
+const LOOK_OVERRIDE = {
+  mega: 'bomb', nuke: 'nuke', shockwave: 'bomb', mortar: 'shell', fireball: 'fireball', bunker: 'missile', comet: 'rock',
+  meteor: 'rock', bomb: 'bomb', bomblet: 'bomb', spark0: 'spark', spark1: 'spark', spark2: 'spark', spark3: 'spark', shell: 'shell',
+};
+const LOOK_CACHE = new Map();
+export function lookOf(style) {
+  let l = LOOK_CACHE.get(style);
+  if (l) return l;
+  const w = WEAPON_IDS.includes(style) ? getWeapon(style) : null;
+  const shape = LOOK_OVERRIDE[style] || (w ? LOOK_BY_BEHAVIOR[w.behavior] : null) || 'shell';
+  const r = w?.params.r || { bomb: 35, bomblet: 22, meteor: 28, spark0: 14, spark1: 14, spark2: 14, spark3: 14 }[style] || 26;
+  const tier = w ? weaponPower(w) : 2;
+  // size grows with blast radius and power tier
+  let size = Math.min(15, 3.2 + Math.sqrt(r) * 0.75 + tier * 0.6);
+  if (style === 'nuke') size = 15;
+  if (style === 'bomblet' || shape === 'spark') size = Math.min(size, 5);
+  l = { shape, size, color: styleColor(style), tier, trail: 0.7 + tier * 0.15 };
+  LOOK_CACHE.set(style, l);
+  return l;
+}
+
+function finsPath(ctx, x0, half, len) {
+  ctx.beginPath();
+  ctx.moveTo(x0, -half); ctx.lineTo(x0 - len, -half * 2.1); ctx.lineTo(x0 - len * 0.6, -half * 0.4);
+  ctx.lineTo(x0 - len * 0.6, half * 0.4); ctx.lineTo(x0 - len, half * 2.1); ctx.lineTo(x0, half);
+  ctx.closePath();
+}
+
+// Draws one projectile at (x, y) pointing along `heading` (radians).
+export function drawLook(ctx, style, x, y, heading, time) {
+  const L = lookOf(style), s = L.size, c = L.color;
+  const glow = (r, col, a = 0.9) => {
+    const prev = ctx.globalCompositeOperation;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = a;
+    ctx.drawImage(glowSprite(col), x - r, y - r, r * 2, r * 2);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = prev;
+  };
+  ctx.save();
+  switch (L.shape) {
+    case 'bullet': {
+      glow(s * 1.6, c, 0.7);
+      ctx.translate(x, y); ctx.rotate(heading);
+      ctx.fillStyle = '#ffe9a8';
+      rr(ctx, -s * 1.8, -s * 0.35, s * 2.6, s * 0.7, s * 0.35); ctx.fill();
+      ctx.fillStyle = '#c69c3f'; ctx.fillRect(-s * 1.8, -s * 0.35, s * 0.9, s * 0.7);
+      break;
+    }
+    case 'tracer': glow(s * 1.4, c); break;
+    case 'spark': glow(s * 2.2, c); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, 1.6, 0, Math.PI * 2); ctx.fill(); break;
+    case 'missile': case 'rocket': {
+      const flick = 0.75 + Math.random() * 0.5;
+      ctx.translate(x, y); ctx.rotate(heading);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.drawImage(glowSprite('#ff9f43'), -s * 3.6 * flick, -s * 0.9, s * 2.4 * flick, s * 1.8);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = shade(c, -0.45); finsPath(ctx, -s * 0.9, s * 0.42, s * 0.9); ctx.fill();
+      const g = ctx.createLinearGradient(0, -s * 0.5, 0, s * 0.5);
+      g.addColorStop(0, shade(c, 0.4)); g.addColorStop(1, shade(c, -0.3));
+      ctx.fillStyle = g; rr(ctx, -s * 1.5, -s * 0.42, s * 2.4, s * 0.84, s * 0.3); ctx.fill();
+      ctx.fillStyle = L.shape === 'rocket' ? '#ff4dd2' : '#e74c3c';
+      ctx.beginPath(); ctx.moveTo(s * 0.9, -s * 0.42); ctx.quadraticCurveTo(s * 1.9, 0, s * 0.9, s * 0.42); ctx.closePath(); ctx.fill();
+      break;
+    }
+    case 'drill': {
+      ctx.translate(x, y); ctx.rotate(heading);
+      ctx.fillStyle = '#7f8c8d'; rr(ctx, -s * 1.3, -s * 0.5, s * 1.4, s, s * 0.2); ctx.fill();
+      ctx.fillStyle = '#bdc3c7';
+      ctx.beginPath(); ctx.moveTo(0, -s * 0.55); ctx.lineTo(s * 1.4, 0); ctx.lineTo(0, s * 0.55); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#636e72'; ctx.lineWidth = 1.2;
+      for (let k = 0; k < 3; k++) { const o = ((time * 30 + k * 6) % (s * 1.3)); ctx.beginPath(); ctx.moveTo(o, -s * 0.5 * (1 - o / (s * 1.4))); ctx.lineTo(o + 3, s * 0.5 * (1 - o / (s * 1.4))); ctx.stroke(); }
+      break;
+    }
+    case 'bomb': case 'nuke': {
+      glow(s * 2.3, L.shape === 'nuke' ? '#fffa65' : c, 0.55);
+      ctx.translate(x, y); ctx.rotate(heading);
+      ctx.fillStyle = L.shape === 'nuke' ? '#3d3d10' : '#2d3436'; finsPath(ctx, -s * 0.7, s * 0.4, s * 0.9); ctx.fill();
+      const g = ctx.createRadialGradient(-s * 0.3, -s * 0.35, s * 0.1, 0, 0, s);
+      if (L.shape === 'nuke') { g.addColorStop(0, '#fffbc2'); g.addColorStop(1, '#d4b106'); } else { g.addColorStop(0, '#7f8c8d'); g.addColorStop(1, '#1e272e'); }
+      ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, 0, s * 1.15, s * 0.85, 0, 0, Math.PI * 2); ctx.fill();
+      if (L.shape === 'nuke') {
+        ctx.rotate(-heading);
+        ctx.fillStyle = '#111';
+        ctx.beginPath(); ctx.arc(0, 0, s * 0.14, 0, Math.PI * 2); ctx.fill();
+        for (let k = 0; k < 3; k++) {
+          const a0 = time * 2 + (k * Math.PI * 2) / 3;
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, s * 0.62, a0, a0 + Math.PI / 3); ctx.closePath(); ctx.fill();
+        }
+      } else {
+        ctx.fillStyle = c; ctx.fillRect(-s * 0.1, -s * 0.85, s * 0.22, s * 1.7);
+      }
+      break;
+    }
+    case 'ball': case 'disc': {
+      glow(s * 1.6, c, 0.5);
+      const g = ctx.createRadialGradient(x - s * 0.35, y - s * 0.4, s * 0.1, x, y, s);
+      g.addColorStop(0, '#ffffff'); g.addColorStop(0.35, c); g.addColorStop(1, shade(c, -0.55));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      if (L.shape === 'disc') ctx.ellipse(x, y, s, s * 0.45, heading, 0, Math.PI * 2); else ctx.arc(x, y, s * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case 'dirt': {
+      ctx.translate(x, y); ctx.rotate(time * 4);
+      ctx.fillStyle = '#8d6e63';
+      ctx.beginPath();
+      for (let k = 0; k < 7; k++) { const a = (k / 7) * Math.PI * 2, rr2 = s * (0.75 + ((k * 37) % 5) * 0.08); ctx.lineTo(Math.cos(a) * rr2, Math.sin(a) * rr2); }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#5d4037'; ctx.beginPath(); ctx.arc(s * 0.2, s * 0.15, s * 0.25, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'canister': {
+      glow(s * 2, c, 0.6);
+      ctx.translate(x, y); ctx.rotate(heading);
+      ctx.fillStyle = '#4b4b4b'; rr(ctx, -s * 1.1, -s * 0.6, s * 2.2, s * 1.2, s * 0.55); ctx.fill();
+      ctx.fillStyle = c; rr(ctx, -s * 0.8, -s * 0.42, s * 1.6, s * 0.84, s * 0.4); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(-s * 0.6, -s * 0.3, s * 1.1, s * 0.16);
+      break;
+    }
+    case 'fireball': {
+      const flick = 1 + Math.sin(time * 30) * 0.12;
+      glow(s * 2.8 * flick, '#ff7f00', 0.9);
+      glow(s * 1.4, '#ffd166', 1);
+      ctx.fillStyle = '#fff3b0'; ctx.beginPath(); ctx.arc(x, y, s * 0.5, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'orb': {
+      const pulse = 1 + Math.sin(time * 12 + x) * 0.15;
+      glow(s * 2.6 * pulse, c, 0.85);
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(x, y, s * 0.42, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.9;
+      ctx.beginPath(); ctx.arc(x, y, s * 0.95 * pulse, time * 6, time * 6 + 4); ctx.stroke();
+      break;
+    }
+    case 'rock': {
+      glow(s * 2.6, '#ff7a2a', 0.8);
+      ctx.translate(x, y); ctx.rotate(time * 3);
+      ctx.fillStyle = '#5d4e46';
+      ctx.beginPath();
+      for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2, rr2 = s * (0.8 + ((k * 53) % 7) * 0.05); ctx.lineTo(Math.cos(a) * rr2, Math.sin(a) * rr2); }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,140,40,.6)'; ctx.beginPath(); ctx.arc(-s * 0.25, -s * 0.2, s * 0.3, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'mine': {
+      ctx.translate(x, y); ctx.rotate(time * 5);
+      ctx.fillStyle = '#2d3436';
+      for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; ctx.fillRect(Math.cos(a) * s * 0.7 - 1.2, Math.sin(a) * s * 0.7 - 1.2, 2.4, 2.4); }
+      ctx.beginPath(); ctx.arc(0, 0, s * 0.62, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = Math.sin(time * 14) > 0 ? '#ff3b3b' : '#6b0f0f'; ctx.beginPath(); ctx.arc(0, 0, s * 0.22, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    case 'flare': {
+      glow(s * 2.4, '#ff3838', 0.8);
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, s * 0.35, 0, Math.PI * 2); ctx.fill();
+      break;
+    }
+    default: { // artillery shell
+      glow(s * 1.9, c, 0.6);
+      ctx.translate(x, y); ctx.rotate(heading);
+      const g = ctx.createLinearGradient(0, -s * 0.5, 0, s * 0.5);
+      g.addColorStop(0, shade(c, 0.45)); g.addColorStop(1, shade(c, -0.4));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(-s * 1.1, -s * 0.48); ctx.lineTo(s * 0.35, -s * 0.48);
+      ctx.quadraticCurveTo(s * 1.35, -s * 0.4, s * 1.45, 0);
+      ctx.quadraticCurveTo(s * 1.35, s * 0.4, s * 0.35, s * 0.48);
+      ctx.lineTo(-s * 1.1, s * 0.48); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#b08d57'; ctx.fillRect(-s * 0.75, -s * 0.48, s * 0.28, s * 0.96);
+    }
+  }
+  ctx.restore();
+}
+
+// Weapon card picture: the projectile, scaled by power, with a glow ring by rarity.
+const THUMBS = new Map();
+// Returns a fresh canvas each call (a DOM node can only be shown in one place); the drawing is cached.
+export function weaponThumb(id, px = 48) {
+  const src = thumbImage(id, px);
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  c.className = 'thumb';
+  c.getContext('2d').drawImage(src, 0, 0);
+  return c;
+}
+
+function thumbImage(id, px) {
+  const key = `${id}@${px}`;
+  if (THUMBS.has(key)) return THUMBS.get(key);
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const c = document.createElement('canvas');
+  c.width = c.height = Math.round(px * dpr);
+  c.className = 'thumb';
+  const g = c.getContext('2d');
+  g.scale(dpr, dpr);
+  const w = getWeapon(id);
+  const ring = { common: '#95a5a6', rare: '#54a0ff', epic: '#be2edd', legendary: '#ffd32a' }[w.rarity];
+  const bg = g.createRadialGradient(px / 2, px / 2, 2, px / 2, px / 2, px / 2);
+  bg.addColorStop(0, shade(ring, -0.2).replace('rgb', 'rgba').replace(')', ',.45)')); bg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.beginPath(); g.arc(px / 2, px / 2, px / 2, 0, Math.PI * 2); g.clip(); // round, so glows never show a square edge
+  g.fillStyle = bg; g.fillRect(0, 0, px, px);
+  const L = lookOf(id);
+  const k = (px / 48) * (0.75 + L.tier * 0.12) * (15 / Math.max(6, L.size)) * 0.9;
+  g.translate(px / 2, px / 2); g.scale(k, k); g.translate(-px / 2, -px / 2);
+  if (w.behavior === 'laser') {
+    g.strokeStyle = w.color; g.lineWidth = 3; g.shadowColor = w.color; g.shadowBlur = 8;
+    g.beginPath(); g.moveTo(px * 0.2, px * 0.75); g.lineTo(px * 0.8, px * 0.25); g.stroke();
+  } else if (['shield', 'fortress'].includes(w.behavior)) {
+    g.font = `${px * 0.55}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(w.icon, px / 2, px / 2);
+  } else {
+    drawLook(g, id, px / 2, px / 2, -0.6, 0.4);
+  }
+  THUMBS.set(key, c);
+  return c;
+}
+
+// 1-5 power bars for weapon cards.
+export function powerBars(id) {
+  const tier = weaponPower(getWeapon(id));
+  const box = document.createElement('span');
+  box.className = `pw t${tier}`;
+  box.title = `Power ${tier}/5`;
+  for (let i = 1; i <= 5; i++) box.append(Object.assign(document.createElement('i'), { className: i <= tier ? 'on' : '' }));
+  return box;
+}
+
+const NO_TRAIL = new Set(['napalm', 'lava', 'blackhole', 'acid', 'jet', 'portal', 'acidDrop', 'tornado']);
 const SPECIAL = {
   meteor: '#ff6348', bomb: '#cfd8dc', bomblet: '#ffa502', lava: '#ff4500', napalm: '#ff7b00', acidDrop: '#c6ff5c',
   spark0: '#ff4dd2', spark1: '#7efff5', spark2: '#fff200', spark3: '#2ed573', shell: '#ffd166',

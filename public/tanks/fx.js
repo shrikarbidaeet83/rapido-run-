@@ -159,8 +159,8 @@ export class FX {
     this.addShake(6);
   }
 
-  beam(x1, y1, x2, y2) {
-    this.beams.push({ x1, y1, x2, y2, t: 0, dur: 0.7 });
+  beam(x1, y1, x2, y2, colors = ['#ff3838', '#ff9f9f', '#ffffff']) {
+    this.beams.push({ x1, y1, x2, y2, t: 0, dur: 0.7, colors });
     for (let i = 0; i < 40; i++) {
       const t = Math.random();
       this.spawn('spark', x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, (Math.random() - 0.5) * 120, (Math.random() - 0.5) * 120, 0.4, 2, '#ff7675', { drag: 0.9 });
@@ -297,7 +297,7 @@ export class FX {
     }
     for (const b of this.beams) {
       const k = b.t / b.dur;
-      for (const [w, c] of [[14, '#ff3838'], [6, '#ff9f9f'], [2, '#ffffff']]) {
+      for (const [w, c] of [[14, b.colors[0]], [6, b.colors[1]], [2, b.colors[2]]]) {
         ctx.globalAlpha = (1 - k) * 0.9;
         ctx.strokeStyle = c;
         ctx.lineWidth = w * (1 - k * 0.6);

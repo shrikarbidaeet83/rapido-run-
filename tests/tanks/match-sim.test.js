@@ -82,3 +82,66 @@ test('a classic tie is reported as a tie', () => {
   assert.equal(m.winner.tie, true);
   assert.equal(m.winner.winners.length, 2);
 });
+
+// ---------- Free Fire + unlimited arsenal ----------
+function runFree(map, mode, seed, settings = {}) {
+  const m = new Match(PLAYERS(4), { ...DEFAULT_SETTINGS, map, mode, pace: 'free', arsenal: 'unlimited', ...settings }, seed);
+  assert.equal(m.phase, 'play', 'unlimited arsenal skips the draft');
+  const rng = mulberry32(seed ^ 0x2545f491);
+  let shots = 0;
+  // shooters take turns at random, as players would in real time
+  while (m.phase === 'play') {
+    const ready = m.players.map((p) => p.index).filter((i) => m.canPlay(i));
+    assert.ok(ready.length, 'someone can still shoot while the match is on');
+    const p = ready[Math.floor(rng() * ready.length)];
+    const plan = planBotTurn(m, p, LEVELS[p], rng, { noMove: true });
+    const res = m.fireFree(p, plan);
+    assert.ok(!res.error, res.error);
+    assert.ok(++shots <= 4 * m.settings.weapons + 8, 'no runaway match');
+  }
+  return m;
+}
+
+for (const mode of ['classic', 'survival']) {
+  test(`Free Fire, unlimited arsenal, 30 rounds: ${mode}`, () => {
+    const m = runFree('dunes', mode, mode === 'classic' ? 11 : 12, { weapons: 30 });
+    const s = m.state;
+    assert.equal(m.phase, 'over');
+    if (mode === 'classic') assert.ok(m.shotsLeft.every((n) => n === 0), 'everyone fired all 30 shots');
+    else assert.ok(m.aliveTeams().size <= 1 || m.shotsLeft.every((n, i) => n === 0 || !s.tanks[i].alive));
+    m.stats.forEach((st, i) => assert.equal(s.tanks[i].score, st.damage - st.self + st.healed));
+    for (const t of s.tanks) assert.ok(Number.isFinite(t.x) && Number.isFinite(t.y));
+    assert.ok(m.winner.winners.length >= 1);
+  });
+}
+
+test('unlimited arsenal: every weapon reusable, legendaries once', () => {
+  const m = new Match(PLAYERS(2), { ...DEFAULT_SETTINGS, arsenal: 'unlimited', weapons: 30 }, 5);
+  assert.equal(m.inv[0].length, 60);
+  m.beginTurn();
+  const p = m.turn.player;
+  const single = m.inv[p].find((w) => w.weapon === 'single');
+  assert.ok(!m.fire(p, { slot: single.slot, angle: 45, power: 30 }).error);
+  assert.equal(single.used, false, 'normal weapons are not used up');
+  assert.equal(m.shotsLeft[p], 29);
+  const nuke = m.inv[p].find((w) => w.weapon === 'nuke');
+  m.beginTurn(); m.skip(m.turn.player);
+  m.beginTurn();
+  assert.ok(!m.fire(p, { slot: nuke.slot, angle: 90, power: 5 }).error);
+  assert.equal(nuke.used, true, 'legendary is single-use');
+});
+
+test('Free Fire: no turns, frozen tanks thaw after their next shot, own mines blow first', () => {
+  const m = new Match(PLAYERS(2), { ...DEFAULT_SETTINGS, map: 'hills', pace: 'free', arsenal: 'unlimited' }, 8);
+  assert.equal(m.turn, null);
+  assert.ok(m.canControl(0) && m.canControl(1), 'both players can act at once');
+  const slot = m.inv[0].find((w) => w.weapon === 'single').slot;
+  m.state.tanks[0].frozen = 1;
+  const r = m.fireFree(0, { slot, angle: 45, power: 100 });
+  assert.equal(r.shot.events.find((e) => e.type === 'fire').power, 80, 'frozen: power capped');
+  assert.equal(m.state.tanks[0].frozen, 0, 'thawed after the shot');
+  m.state.mines.push({ id: 77, x: 800, y: m.state.terrain[800], owner: 1, armed: false });
+  const r2 = m.fireFree(1, { slot, angle: 45, power: 40 });
+  assert.equal(r2.pre.length, 1, "the shooter's mine went off before the shot");
+  assert.equal(m.fire(0, { slot, angle: 45, power: 40 }).error, 'Free Fire match: use fireFree');
+});

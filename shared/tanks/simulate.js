@@ -14,6 +14,7 @@ import {
 import { getWeapon, BEHAVIORS } from './weapons.js';
 
 export const FRAME_EVERY = 2; // recorded animation frames: 60 per second
+export const FRAME_STRIDE = 4; // frame.p holds [style, x, y, heading] per projectile
 
 // ---------- state ----------
 export function makeTank({ id, team, x, terrain }) {
@@ -147,13 +148,14 @@ export class Sim {
 
   markDirty(range) { this.dirty = mergeRange(this.dirty, range); }
 
-  // Damage one tank. Shields absorb first. Points go to the shooter;
-  // self/teammate damage costs points (Classic) and always costs HP (Survival).
+  // Damage one tank. Shields absorb first. Points go to the shooter.
+  // The shooter is immune to its own attack; teammate damage (friendly fire on)
+  // costs points (Classic) and HP (Survival).
   hurt(i, amount, o = {}) {
     const s = this.s, tk = s.tanks[i];
     if (!tk.alive) return 0;
-    const own = i === this.shooter;
-    const mate = !own && sameTeam(s, i, this.shooter);
+    if (i === this.shooter) return 0;
+    const mate = sameTeam(s, i, this.shooter);
     if (mate && !s.friendlyFire) return 0;
     let amt = Math.round(amount);
     if (!(amt > 0)) return 0;
@@ -169,7 +171,7 @@ export class Sim {
     if (amt <= 0) return 0;
     if (s.mode === 'survival') tk.hp -= amt;
     const shooter = s.tanks[this.shooter];
-    if (own || mate) {
+    if (mate) {
       shooter.score -= amt;
       this.summary.self += amt;
     } else {
@@ -271,8 +273,8 @@ export class Sim {
     const p = [];
     for (const e of this.ents) {
       if (e.hidden || e.kind === 'timer') continue;
-      if (e.parts) { for (const q of e.parts) p.push(e.style, q.x, q.y); continue; }
-      p.push(e.style || e.kind, e.x, e.y);
+      if (e.parts) { for (const q of e.parts) p.push(e.style, q.x, q.y, 0); continue; }
+      p.push(e.style || e.kind, e.x, e.y, e.vx != null ? Math.atan2(e.vy, e.vx) : 0);
     }
     this.frames.push({ t: this.step, p, tanks: this.s.tanks.map((t) => [t.x, t.y, t.tilt]) });
   }

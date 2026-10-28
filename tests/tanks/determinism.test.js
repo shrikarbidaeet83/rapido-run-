@@ -1,7 +1,7 @@
 // Every weapon, 50 seeds each: deterministic, terminates, and leaves a valid world.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { simulateShot } from '../../shared/tanks/simulate.js';
+import { simulateShot, FRAME_STRIDE } from '../../shared/tanks/simulate.js';
 import { WEAPONS } from '../../shared/tanks/weapons.js';
 import { MAP_IDS } from '../../shared/tanks/maps.js';
 import { mulberry32 } from '../../shared/tanks/rng.js';
@@ -9,9 +9,9 @@ import { surfaceY } from '../../shared/tanks/terrain.js';
 import { WORLD_W, GROUND_MIN, GROUND_MAX, MAX_STEPS, MAX_EXPLOSIONS, MAX_PROJECTILES } from '../../shared/tanks/constants.js';
 import { mapState } from './helpers.js';
 
-test('there are exactly 40 weapons with unique ids', () => {
-  assert.equal(WEAPONS.length, 40);
-  assert.equal(new Set(WEAPONS.map((w) => w.id)).size, 40);
+test('there are exactly 60 weapons with unique ids', () => {
+  assert.equal(WEAPONS.length, 60);
+  assert.equal(new Set(WEAPONS.map((w) => w.id)).size, 60);
 });
 
 for (const w of WEAPONS) {
@@ -19,7 +19,7 @@ for (const w of WEAPONS) {
     const rng = mulberry32(w.id.length * 7919 + w.id.charCodeAt(0));
     for (let i = 0; i < 50; i++) {
       const map = MAP_IDS[i % MAP_IDS.length];
-      const st = mapState(map, rng.seed(), 2 + (i % 3), { wind: rng.int(-10, 10), mode: i % 2 ? 'survival' : 'classic', walls: ['none', 'wrap', 'bounce'][i % 3] });
+      const st = mapState(map, rng.seed(), 2 + (i % 3), { mode: i % 2 ? 'survival' : 'classic', walls: ['none', 'wrap', 'bounce'][i % 3] });
       const input = { shooter: i % st.tanks.length, weapon: w.id, angle: rng.range(0, 180), power: rng.range(10, 100) };
       const seed = rng.seed();
       const a = simulateShot(st, input, seed);
@@ -47,8 +47,8 @@ for (const w of WEAPONS) {
 }
 
 test('safety caps hold with many projectiles (Machine Gun + walls, Airstrike, Acid)', () => {
-  for (const weapon of ['mgun', 'airstrike', 'acid', 'cluster', 'firework', 'volcano', 'meteor']) {
+  for (const weapon of ['mgun', 'airstrike', 'acid', 'cluster', 'firework', 'volcano', 'meteor', 'hydra', 'swarm', 'tornado']) {
     const res = simulateShot(mapState('neon', 3, 4), { shooter: 0, weapon, angle: 70, power: 80 }, 5, { record: true });
-    for (const f of res.frames) assert.ok(f.p.length / 3 <= MAX_PROJECTILES);
+    for (const f of res.frames) assert.ok(f.p.length / FRAME_STRIDE <= MAX_PROJECTILES);
   }
 });

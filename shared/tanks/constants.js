@@ -10,8 +10,7 @@ export const DT = 1 / STEP_RATE;
 export const SUBSTEP_PX = 4;           // max distance a projectile moves per collision check
 export const GRAVITY = 300;            // px/s²
 export const POWER_K = 7;              // launch speed (px/s) per power point
-export const WIND_MAX = 10;
-export const WIND_FACTOR = 6;          // px/s² of sideways push per wind point
+export const WIND_FACTOR = 6;          // px/s² per wind point (the game has no wind: state.wind is always 0)
 
 // safety limits per shot
 export const MAX_PROJECTILES = 400;
@@ -53,20 +52,24 @@ export const MINE_TRIGGER = 60;
 // match setup
 export const MAX_PLAYERS = 4;
 export const MIN_PLAYERS = 2;
-export const WEAPON_COUNTS = [5, 10, 15];
+export const WEAPON_COUNTS = [5, 10, 15, 30, 40, 50];   // rounds (shots per player)
 export const TURN_TIMES = [20, 30, 45, 0];     // seconds, 0 = off
 export const DEFAULT_SETTINGS = Object.freeze({
   mode: 'classic',          // 'classic' | 'survival'
   map: 'random',
-  weapons: 10,
+  weapons: 10,              // rounds: shots per player
+  pace: 'turns',            // 'turns' | 'free' (Free Fire: everyone shoots whenever reloaded)
+  arsenal: 'draft',         // 'draft' | 'unlimited' (every weapon, every round; legendaries once)
   turnTime: 30,
-  wind: true,
   friendlyFire: true,
   walls: 'none',            // 'none' | 'wrap' | 'bounce'
   teams: false,             // 2v2 when 4 players
   public: false,
 });
 export const DRAFT_PICK_SECONDS = 15;
+export const FREE_RELOAD_MS = 3000;        // Free Fire: time between your shots
+export const FREE_SECONDS_PER_ROUND = 8;   // Free Fire match clock = rounds × this
+export const FREE_MIN_SECONDS = 90;
 export const POOL_EXTRA = 5;               // pool size = weapons × players + 5
 export const SPAWN_MIN_GAP = 300;
 

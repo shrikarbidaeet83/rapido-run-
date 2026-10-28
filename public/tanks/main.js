@@ -5,11 +5,11 @@ import {
   FROZEN_POWER_CAP, DRAFT_PICK_SECONDS, WEAPON_COUNTS, TURN_TIMES,
 } from '/shared/tanks/constants.js';
 import { MAPS, getMap } from '/shared/tanks/maps.js';
-import { getWeapon, weaponStats } from '/shared/tanks/weapons.js';
+import { getWeapon, weaponStats, weaponPower } from '/shared/tanks/weapons.js';
 import { terrainFromInts, applyDiff, surfaceY, slopeAt } from '/shared/tanks/terrain.js';
 import { previewPath, muzzle, DEG } from '/shared/tanks/physics.js';
-import { simulateShot, hashState, FRAME_EVERY } from '/shared/tanks/simulate.js';
-import { Renderer, drawTank } from './render.js';
+import { simulateShot, hashState, FRAME_EVERY, FRAME_STRIDE } from '/shared/tanks/simulate.js';
+import { Renderer, drawTank, weaponThumb, powerBars } from './render.js';
 import { FX } from './fx.js';
 import { createInput } from './input.js';
 import { audio } from './audio.js';
@@ -48,7 +48,8 @@ const G = {
   vt: [],            // display tanks
   turn: null, turnLocalDeadline: 0, lastTick: 0,
   aim: { angle: 60, power: 60, slot: null },
-  play: null, queue: [], moving: null,
+  plays: [], queue: [], moves: [], history: [],   // shots/moves animating (several at once in Free Fire)
+  free: null, freeEnds: 0, reloadUntil: 0, listSel: 0,
   tracers: new Map(), bubbles: new Map(),
   cam: { x: WORLD_W / 2, y: WORLD_H / 2, zoom: 1 },
   draftSel: null, draftDeadline: 0,
@@ -177,7 +178,7 @@ $('join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinC
 
 function leaveRoom() {
   send('leave');
-  G.room = null; G.match = null; G.st = null; G.play = null; G.queue = []; G.code = null;
+  G.room = null; G.match = null; G.st = null; G.plays = []; G.moves = []; G.queue = []; G.code = null; G.free = null;
   G.tracers.clear();
   fx.clear();
   audio.stopAmbience();
@@ -254,9 +255,10 @@ function renderLobby() {
 const SETTINGS = [
   ['Mode', 'mode', [['classic', 'Classic Score'], ['survival', 'Survival']]],
   ['Map', 'map', [['random', 'Random'], ...MAPS.map((m) => [m.id, m.name])], 'select'],
-  ['Weapons', 'weapons', WEAPON_COUNTS.map((n) => [n, String(n)])],
+  ['Pace', 'pace', [['turns', 'Take turns'], ['free', 'Free fire']]],
+  ['Arsenal', 'arsenal', [['draft', 'Draft'], ['unlimited', 'Unlimited']]],
+  ['Rounds', 'weapons', WEAPON_COUNTS.map((n) => [n, String(n)])],
   ['Turn timer', 'turnTime', TURN_TIMES.map((n) => [n, n ? `${n}s` : 'Off'])],
-  ['Wind', 'wind', [[true, 'On'], [false, 'Off']]],
   ['Friendly fire', 'friendlyFire', [[true, 'On'], [false, 'Off']]],
   ['Walls', 'walls', [['none', 'None'], ['wrap', 'Wrap'], ['bounce', 'Bounce']]],
   ['Teams', 'teams', [[false, 'Free for all'], [true, '2 teams']]],
@@ -267,7 +269,8 @@ function renderSettings() {
   const box = $('settings');
   const nodes = [];
   for (const [label, key, opts, kind] of SETTINGS) {
-    if (key === 'public' && G.room.local) continue;
+    if ((key === 'public' || key === 'pace') && G.room.local) continue;
+    if (key === 'turnTime' && s.pace === 'free') continue;
     nodes.push(el('span', 'hint', label));
     if (kind === 'select') {
       const sel = el('select');
@@ -359,7 +362,7 @@ for (const bar of document.querySelectorAll('[data-emoji-bar]')) {
 }
 function sendEmoji(e) {
   // in a local game the emoji comes from whoever is playing now
-  const as = G.turn && G.match ? G.match.players[G.turn.player]?.id : null;
+  const as = G.turn && G.match && !isFree() ? G.match.players[G.turn.player]?.id : null;
   send('emoji', { e, as: as && G.me.includes(as) ? as : undefined });
 }
 function wireChat(form, input) {
@@ -404,7 +407,7 @@ function renderDraft() {
     c.type = 'button';
     c.dataset.slot = item.slot;
     if (item.by >= 0) c.dataset.by = m.players[item.by]?.name || '';
-    c.append(el('span', 'wi', w.icon), el('span', null, w.name));
+    c.append(weaponThumb(w.id, 40), el('span', 'wn', w.name), powerBars(w.id));
     c.title = `${w.name}: ${w.desc} (${weaponStats(w)})`;
     c.onclick = () => {
       if (item.by >= 0) return;
@@ -420,11 +423,13 @@ function renderDraft() {
   if (sel && sel.by < 0) {
     const w = getWeapon(sel.weapon);
     const h = el('h3');
-    h.append(el('span', 'wi', w.icon), document.createTextNode(w.name));
-    info.replaceChildren(h, el('div', 'rar', w.rarity), el('p', null, w.desc), el('p', 'hint', weaponStats(w)));
+    h.append(weaponThumb(w.id, 56), document.createTextNode(w.name));
+    const rar = el('div', 'rar', `${w.rarity} · power `);
+    rar.append(powerBars(w.id));
+    info.replaceChildren(h, rar, el('p', null, w.desc), el('p', 'hint', weaponStats(w)), el('p', 'hint', mine ? 'Press Enter (or tap again) to pick' : ''));
   } else {
     G.draftSel = null;
-    info.replaceChildren(el('p', 'hint', 'Tap a weapon to see what it does. Tap again to pick it.'));
+    info.replaceChildren(el('p', 'hint', 'Tap a weapon to see what it does, tap again to pick it. Keyboard: arrows to choose, Enter to pick.'));
   }
   $('btn-pick').disabled = !(mine && G.draftSel != null);
   const side = m.players.map((p, i) => {
@@ -433,12 +438,37 @@ function renderDraft() {
     const dot = el('i'); dot.style.background = p.color;
     n.append(dot, document.createTextNode(`${p.name} (${m.inv[i].length}/${m.settings.weapons})`));
     const wl = el('div', 'dw');
-    for (const it of m.inv[i]) { const s = el('span', null, getWeapon(it.weapon).icon); s.title = getWeapon(it.weapon).name; wl.append(s); }
+    for (const it of m.inv[i]) { const t = weaponThumb(it.weapon, 24); t.title = getWeapon(it.weapon).name; wl.append(t); }
     d.append(n, wl);
     return d;
   });
   $('draft-players').replaceChildren(...side);
 }
+// Keyboard draft: arrows move the highlight, Enter picks it.
+function draftNav(action) {
+  const m = G.match;
+  if (!m) return false;
+  const free = m.pool.filter((it) => it.by < 0).map((it) => it.slot);
+  if (!free.length) return false;
+  if (action === 'fire') {
+    if (G.draftSel == null) { G.draftSel = free[0]; renderDraft(); } else doPick();
+    return true;
+  }
+  const cards = [...document.querySelectorAll('#pool .wcard')];
+  const cols = Math.max(1, cards.filter((c) => c.offsetTop === cards[0]?.offsetTop).length);
+  const d = { angleUp: -1, angleDown: 1, powerUp: -cols, powerDown: cols, prevWeapon: -1, nextWeapon: 1 }[action];
+  if (d == null) return false;
+  let i = G.draftSel == null ? -d : G.draftSel;
+  for (let n = 0; n < m.pool.length; n++) {
+    i = (i + d + m.pool.length) % m.pool.length;
+    if (m.pool[i].by < 0) break;
+  }
+  G.draftSel = i;
+  renderDraft();
+  document.querySelector(`.wcard[data-slot="${i}"]`)?.scrollIntoView({ block: 'nearest' });
+  return true;
+}
+
 async function doPick() {
   if (G.draftSel == null) return;
   const res = await emit('pick', { slot: G.draftSel });
@@ -449,11 +479,13 @@ $('btn-pick').onclick = doPick;
 
 // ---------- game state sync ----------
 function loadSnapshot(snap) {
-  G.match = { players: snap.players, settings: snap.settings, inv: snap.inv, pool: snap.pool, order: snap.order, pick: snap.pick, stats: snap.stats };
+  G.match = { players: snap.players, settings: snap.settings, inv: snap.inv, pool: snap.pool, order: snap.order, pick: snap.pick, stats: snap.stats, shotsLeft: snap.shotsLeft || [] };
   G.draftDeadline = performance.now() + DRAFT_PICK_SECONDS * 1000;
-  G.play = null;
+  G.plays = [];
   G.queue = [];
-  G.moving = null;
+  G.moves = [];
+  G.free = null;
+  if (snap.free) startFreeUi({ duration: snap.free.endsIn, reload: snap.free.reload, shotsLeft: snap.shotsLeft, quiet: true, reloadIn: snap.free.reloadIn });
   if (snap.state) {
     const s = snap.state;
     G.st = { ...s, terrain: terrainFromInts(s.terrain), tanks: s.tanks.map((t) => ({ ...t })), mines: s.mines.map((m) => ({ ...m })) };
@@ -468,6 +500,7 @@ function loadSnapshot(snap) {
   } else {
     G.st = null;
   }
+  if (snap.free && G.st) initFreeAim();
   if (snap.phase === 'draft') { show('draft'); renderDraft(); }
   else if (snap.phase === 'play') { show('game'); renderHud(); }
   else if (snap.phase === 'over' && snap.results) { showResults({ ...snap.results, session: G.room?.session || [] }); }
@@ -496,23 +529,54 @@ function syncDisplayFromState() {
 }
 
 // Run handlers in order; anything arriving while a shot/move animates waits its turn.
+const busy = () => G.plays.length > 0 || G.moves.length > 0;
 function enqueue(fn) {
-  if (G.play || G.moving || G.queue.length) G.queue.push(fn);
+  if (busy() || G.queue.length) G.queue.push(fn);
   else fn();
 }
 function drain() {
-  while (!G.play && !G.moving && G.queue.length) G.queue.shift()();
+  while (!busy() && G.queue.length) G.queue.shift()();
 }
 
 // ---------- turns & HUD ----------
 const myTurn = () => !!G.turn && !G.turn.fired && !!G.match && G.me.includes(G.match.players[G.turn.player]?.id);
+const isFree = () => G.match?.settings.pace === 'free';
+const mySeat = () => (G.match ? G.match.players.findIndex((pl) => G.me.includes(pl.id)) : -1);
+// Seat the local player controls right now (-1 = none): the active turn, or your own tank in Free Fire.
+function actor() {
+  if (!G.match || !G.st || G.room?.phase !== 'match') return -1;
+  if (isFree()) {
+    const p = mySeat();
+    return p >= 0 && G.free && G.st.tanks[p]?.alive && (G.match.shotsLeft[p] ?? 0) > 0 ? p : -1;
+  }
+  return myTurn() && !busy() ? G.turn.player : -1;
+}
+const frozenNow = (p) => (isFree() ? G.st.tanks[p]?.frozen > 0 : !!G.turn?.frozen);
+
+function startFreeUi(msg) {
+  G.free = { reload: msg.reload };
+  G.freeEnds = performance.now() + msg.duration;
+  if (msg.shotsLeft) G.match.shotsLeft = [...msg.shotsLeft];
+  const p = mySeat();
+  G.reloadUntil = p >= 0 && msg.reloadIn ? performance.now() + (msg.reloadIn[p] || 0) : 0;
+  if (!msg.quiet) { banner('FREE FIRE!', '#ffb703'); audio.chime(); showToast('No turns: aim and fire whenever you are reloaded'); }
+}
+
+function initFreeAim() {
+  const p = mySeat();
+  if (p < 0) return;
+  const tank = G.st.tanks[p];
+  G.aim.angle = tank.angle;
+  G.aim.power = tank.power;
+  const inv = G.match.inv[p];
+  if (!inv.some((w) => w.slot === G.aim.slot && !w.used)) G.aim.slot = inv.find((w) => !w.used)?.slot ?? null;
+  syncAimUi();
+}
 
 function startTurnUi(t, announce = true) {
   G.turn = t;
-  G.sling = null;
   if (t.tanks) G.st.tanks = t.tanks.map((x) => ({ ...x }));
   if (t.mines) G.st.mines = t.mines.map((x) => ({ ...x }));
-  G.st.wind = t.wind;
   syncDisplayFromState();
   G.turnLocalDeadline = G.match.settings.turnTime ? performance.now() + G.match.settings.turnTime * 1000 : 0;
   const p = G.match.players[t.player];
@@ -554,60 +618,63 @@ function renderHud() {
     c.append(el('span', 'sc', String(survival ? t.hp : t.score)));
     if (t.shield > 0) c.append(el('span', 'st', '🛡'));
     if (t.frozen) c.append(el('span', 'st', '❄'));
-    c.append(el('span', 'wl', `${G.match.inv[i].filter((w) => !w.used).length}🎯`));
+    c.append(el('span', 'wl', `${G.match.shotsLeft[i] ?? 0}🎯`));
     return c;
   });
   $('chips').replaceChildren(...chips);
-  const w = G.st.wind || 0;
-  const arrow = $('wind-arrow');
-  arrow.className = `wind-arrow ${w > 0 ? 'r' : w < 0 ? 'l' : ''}`;
-  const len = Math.abs(w) * 2;
-  arrow.style.setProperty('--w', `${len}px`);
-  arrow.style.setProperty('--o', w < 0 ? `${-len}px` : '0px');
-  arrow.style.setProperty('--tip', `${w > 0 ? len : w < 0 ? -len : 0}px`);
-  arrow.style.visibility = w ? 'visible' : 'hidden';
-  $('wind-val').textContent = String(Math.abs(w));
-  $('round').textContent = G.turn ? `Round ${G.turn.round}/${G.match.settings.weapons}` : '';
-  const mine = myTurn() && !G.play && !G.moving;
+  const seat = mySeat();
+  $('round').textContent = isFree()
+    ? (seat >= 0 ? `Shots ${G.match.shotsLeft[seat] ?? 0}/${G.match.settings.weapons}` : 'Free fire')
+    : G.turn ? `Round ${G.turn.round}/${G.match.settings.weapons}` : '';
+  const me = actor();
+  const mine = me >= 0;
   $('hud-bottom').classList.toggle('off', !mine);
-  $('aim-hint').hidden = !mine || G.aimedOnce;
   if (!mine) $('weapon-list').hidden = true;
   if (mine) {
-    const tank = G.st.tanks[G.turn.player];
+    const tank = G.st.tanks[me];
     $('moves-val').textContent = String(tank.moves);
-    const canMove = tank.moves > 0 && !G.turn.frozen;
+    const canMove = tank.moves > 0 && !frozenNow(me);
     $('move-left').disabled = !canMove;
     $('move-right').disabled = !canMove;
+    $('power').max = frozenNow(me) ? FROZEN_POWER_CAP : 100;
     syncAimUi();
   }
 }
 
 function syncAimUi() {
+  $('angle').value = G.aim.angle;
+  $('power').value = G.aim.power;
   $('angle-val').textContent = G.aim.angle.toFixed(1).replace(/\.0$/, '');
   $('power-val').textContent = G.aim.power.toFixed(1).replace(/\.0$/, '');
-  const item = G.turn && G.match.inv[G.turn.player].find((w) => w.slot === G.aim.slot);
+  const me = actor();
+  const item = me >= 0 ? G.match.inv[me].find((w) => w.slot === G.aim.slot && !w.used) : null;
   const w = item ? getWeapon(item.weapon) : null;
-  $('w-icon').textContent = w ? w.icon : '';
-  $('w-name').textContent = w ? w.name : '—';
-  $('w-desc').textContent = w ? `${w.desc} ${weaponStats(w)}` : '';
+  if ($('w-icon').dataset.id !== (w?.id || '')) {
+    $('w-icon').dataset.id = w?.id || '';
+    $('w-icon').replaceChildren(...(w ? [weaponThumb(w.id, 36)] : []));
+    $('w-name').replaceChildren(...(w ? [document.createTextNode(w.name), powerBars(w.id)] : [document.createTextNode('—')]));
+  }
+  $('w-desc').textContent = w ? `${w.desc} ${weaponStats(w)}${item.infinite ? '' : item && G.match.settings.arsenal === 'unlimited' ? ' · single use' : ''}` : '';
   $('btn-fire').disabled = !item;
 }
 
 function setAim(angle, power) {
-  if (!myTurn()) return;
-  const cap = G.turn.frozen ? FROZEN_POWER_CAP : 100;
+  const me = actor();
+  if (me < 0) return;
+  const cap = frozenNow(me) ? FROZEN_POWER_CAP : 100;
   G.aim.angle = Math.round(Math.max(0, Math.min(180, angle)) * 10) / 10;
   G.aim.power = Math.round(Math.max(0, Math.min(cap, power)) * 10) / 10;
-  G.vt[G.turn.player].tAngle = G.aim.angle;
-  G.vt[G.turn.player].angle = G.aim.angle;
+  G.vt[me].tAngle = G.aim.angle;
+  G.vt[me].angle = G.aim.angle;
   syncAimUi();
   const now = performance.now();
   if (now - (setAim.last || 0) > 100) { setAim.last = now; send('aim', { angle: G.aim.angle, power: G.aim.power, slot: G.aim.slot }); }
 }
 
 function cycleWeapon(d) {
-  if (!myTurn()) return;
-  const inv = G.match.inv[G.turn.player].filter((w) => !w.used);
+  const me = actor();
+  if (me < 0) return;
+  const inv = G.match.inv[me].filter((w) => !w.used);
   if (!inv.length) return;
   const i = inv.findIndex((w) => w.slot === G.aim.slot);
   G.aim.slot = inv[(i + d + inv.length) % inv.length].slot;
@@ -618,22 +685,59 @@ function cycleWeapon(d) {
 function openWeaponList() {
   const box = $('weapon-list');
   if (!box.hidden) { box.hidden = true; return; }
-  const inv = G.match.inv[G.turn.player].filter((w) => !w.used);
-  box.replaceChildren(...inv.map((it) => {
+  const me = actor();
+  if (me < 0) return;
+  const inv = G.match.inv[me].filter((w) => !w.used);
+  G.listSel = Math.max(0, inv.findIndex((it) => it.slot === G.aim.slot));
+  box.replaceChildren(...inv.map((it, k) => {
     const w = getWeapon(it.weapon);
-    const b = el('button', it.slot === G.aim.slot ? 'sel' : '');
+    const b = el('button', k === G.listSel ? 'sel' : '');
     b.type = 'button';
+    b.dataset.slot = it.slot;
     b.title = `${w.desc} (${weaponStats(w)})`;
-    b.append(el('span', 'wi', w.icon), el('span', null, w.name));
-    b.onclick = () => { G.aim.slot = it.slot; box.hidden = true; syncAimUi(); audio.click(); };
+    const name = el('span', 'wn', w.name);
+    b.append(weaponThumb(w.id, 30), name, powerBars(w.id));
+    if (G.match.settings.arsenal === 'unlimited') b.append(el('small', 'uses', it.infinite ? '∞' : '1×'));
+    b.onclick = () => chooseFromList(it.slot);
     return b;
   }));
   box.hidden = false;
+  box.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
+}
+
+function chooseFromList(slot) {
+  G.aim.slot = slot;
+  $('weapon-list').hidden = true;
+  syncAimUi();
+  audio.click();
+}
+
+// Keyboard in the open weapon list: arrows move, Enter equips.
+function listNav(action) {
+  const btns = [...$('weapon-list').querySelectorAll('button')];
+  if (!btns.length) return false;
+  if (action === 'fire') { chooseFromList(Number(btns[G.listSel]?.dataset.slot)); return true; }
+  const cols = Math.max(1, btns.filter((b) => b.offsetTop === btns[0].offsetTop).length);
+  const d = { angleUp: -1, angleDown: 1, powerUp: -cols, powerDown: cols, prevWeapon: -1, nextWeapon: 1 }[action];
+  if (d == null) return false;
+  btns[G.listSel]?.classList.remove('sel');
+  G.listSel = (G.listSel + d + btns.length) % btns.length;
+  btns[G.listSel].classList.add('sel');
+  btns[G.listSel].scrollIntoView({ block: 'nearest' });
+  return true;
 }
 
 async function fire() {
-  if (!myTurn() || G.play || G.moving || G.aim.slot == null) return;
+  const me = actor();
+  if (me < 0 || G.aim.slot == null) return;
   audio.unlock();
+  if (isFree()) {
+    if (performance.now() < G.reloadUntil) { showToast('Reloading…'); return; }
+    G.reloadUntil = performance.now() + (G.free?.reload || 3000);
+    const res = await emit('fire', { slot: G.aim.slot, angle: G.aim.angle, power: G.aim.power });
+    if (res.error) { G.reloadUntil = 0; showToast(res.error); }
+    return;
+  }
   G.turn.fired = true;
   renderHud();
   const res = await emit('fire', { slot: G.aim.slot, angle: G.aim.angle, power: G.aim.power });
@@ -641,7 +745,7 @@ async function fire() {
 }
 
 async function move(dir) {
-  if (!myTurn() || G.play || G.moving) return;
+  if (actor() < 0) return;
   const res = await emit('move', { dir });
   if (res.error) showToast(res.error);
 }
@@ -652,6 +756,19 @@ $('w-next').onclick = () => cycleWeapon(1);
 $('w-open').onclick = openWeaponList;
 $('move-left').onclick = () => move(-1);
 $('move-right').onclick = () => move(1);
+$('angle').addEventListener('input', () => setAim(Number($('angle').value), G.aim.power));
+$('power').addEventListener('input', () => setAim(G.aim.angle, Number($('power').value)));
+for (const b of document.querySelectorAll('[data-step]')) {
+  const [k, d] = b.dataset.step.split(':');
+  let rep = null;
+  const step = (e) => {
+    const fine = e?.shiftKey ? 0.1 : 1;
+    if (k === 'angle') setAim(G.aim.angle + Number(d) * fine, G.aim.power);
+    else setAim(G.aim.angle, G.aim.power + Number(d) * fine);
+  };
+  b.addEventListener('pointerdown', (e) => { step(e); clearInterval(rep); rep = setInterval(step, 90); });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => clearInterval(rep));
+}
 
 // ---------- menu ----------
 $('btn-menu').onclick = () => { $('menu').hidden = false; };
@@ -687,38 +804,70 @@ function startShot(shot) {
   if (local.hash !== shot.hash) console.warn('local replay differs from server; snapping to server state');
   const srv = shot.events.filter((e) => ['damage', 'heal', 'destroyed', 'tracer'].includes(e.type));
   const firstHit = local.events.find((e) => e.type === 'explode' || e.type === 'damage' || e.type === 'laser');
-  G.play = {
-    shot, local, step: 0, evI: 0, srvI: 0, srv, idle: 0, apex: false, lastY: null,
+  const P = {
+    shot, local, step: 0, evI: 0, srvI: 0, srv, idle: 0, apex: false, lastY: null, history: [],
     slowAt: shot.final && firstHit ? Math.max(0, firstHit.t - 20) : -1, slowLeft: 1,
-    hits: new Map(), shooter: shot.input.shooter,
+    hits: new Map(), shooter: shot.input.shooter, tanks0: local.frames[0]?.tanks,
   };
+  G.plays.push(P);
   if (shot.input.weapon) {
     const inv = G.match.inv[shot.input.shooter];
     const item = inv.find((w) => w.weapon === shot.input.weapon && !w.used);
-    if (item) item.used = true;
+    if (item && !item.infinite) item.used = true;
   }
+  if (shot.shotsLeft) G.match.shotsLeft = [...shot.shotsLeft];
   G.tracers.delete(shot.input.shooter);
+  // Free Fire: the next shot may arrive mid-animation, so the synced state moves on right away
+  if (isFree()) applyShotResult(shot);
   renderHud();
-  if (document.hidden) finishShot();
+  if (document.hidden) finishShot(P);
+  if (isFree()) {
+    for (const ms of shot.mineShots || []) startShot(ms);
+    if (shot.after) {
+      G.st.tanks = shot.after.tanks.map((t) => ({ ...t }));
+      if (hashState(G.st) !== shot.after.hash) { console.warn('state hash mismatch after shot: resyncing'); send('sync'); }
+    }
+  }
 }
 
-function updateShot(dt) {
-  const P = G.play;
-  if (!P) return;
+function applyShotResult(shot) {
+  applyDiff(G.st.terrain, shot.terrain);
+  G.st.tanks = shot.tanks.map((t) => ({ ...t }));
+  G.st.mines = shot.mines.map((m) => ({ ...m }));
+  if (hashState(G.st) !== shot.hash) { console.warn('terrain/state hash mismatch: resyncing'); send('sync'); }
+}
+
+function updateShots(dt) {
+  for (const P of [...G.plays]) updateShot(P, dt);
+  // merge the recent frames of every shot in flight for drawing
+  const len = Math.max(0, ...G.plays.map((P) => P.history.length));
+  G.history = [];
+  for (let j = 0; j < len; j++) {
+    const merged = [];
+    for (const P of G.plays) { const f = P.history[P.history.length - len + j]; if (f) merged.push(...f); }
+    G.history.push(merged);
+  }
+}
+
+function updateShot(P, dt) {
   let speed = 1;
   if (P.slowAt >= 0 && P.step >= P.slowAt && P.slowLeft > 0) { speed = 0.3; P.slowLeft -= dt; }
   P.step += dt * STEP_RATE * speed;
   const step = Math.floor(P.step);
   const L = P.local;
   while (P.evI < L.events.length && L.events[P.evI].t <= step) localEvent(L.events[P.evI++]);
-  while (P.srvI < P.srv.length && P.srv[P.srvI].t <= step) serverEvent(P.srv[P.srvI++]);
+  while (P.srvI < P.srv.length && P.srv[P.srvI].t <= step) serverEvent(P, P.srv[P.srvI++]);
   const frames = L.frames;
   const fi = Math.min(frames.length - 1, Math.floor(P.step / FRAME_EVERY) - 1);
   P.history = [];
   if (fi >= 0 && P.step <= L.steps + FRAME_EVERY) {
     for (let k = Math.max(0, fi - 8); k <= fi; k++) P.history.push(frames[k].p);
     const f = frames[fi];
-    f.tanks.forEach(([x, y, tilt], i) => { const v = G.vt[i]; if (v) { v.x = x; v.y = y; v.tilt = tilt; } });
+    // only tanks this shot moves (other shots or moves may be animating them)
+    f.tanks.forEach(([x, y, tilt], i) => {
+      const v = G.vt[i], t0 = P.tanks0?.[i];
+      if (v && (!t0 || Math.abs(t0[0] - x) > 0.5 || Math.abs(t0[1] - y) > 0.5)) { v.x = x; v.y = y; v.tilt = tilt; }
+    });
     emitTrails(f.p, dt);
     // whistle once the first shell starts falling
     if (f.p.length && !P.apex) {
@@ -728,16 +877,17 @@ function updateShot(dt) {
   }
   if (P.step >= L.steps) {
     P.idle += dt;
-    if (P.idle > 0.7) finishShot();
+    if (P.idle > 0.7) finishShot(P);
   }
 }
 
 function emitTrails(p, dt) {
-  for (let i = 0; i < p.length; i += 3) {
+  for (let i = 0; i < p.length; i += FRAME_STRIDE) {
     const st = p[i], x = p[i + 1], y = p[i + 2];
     if (Math.random() > dt * 60) continue;
-    if (st === 'meteor' || st === 'nuke' || st === 'lava') fx.trail(x, y, '#ff7a2a', 'fire');
-    if (st === 'homing' || st === 'nuke' || st === 'drill') fx.trail(x, y, '#ccc', 'smoke');
+    if (st === 'meteor' || st === 'nuke' || st === 'lava' || st === 'comet' || st === 'fireball') fx.trail(x, y, '#ff7a2a', 'fire');
+    if (['homing', 'nuke', 'drill', 'twinmissile', 'swarm', 'bunker'].includes(st)) fx.trail(x, y, '#ccc', 'smoke');
+    if (st === 'tornado' && Math.random() < 0.5) fx.trail(x + (Math.random() - 0.5) * 30, y + 25, '#a4b0be', 'smoke');
     if (st === 'napalm' && Math.random() < 0.3) fx.trail(x, y - 4, '#ff9f1c', 'fire');
     if (st === 'blackhole') {
       const a = Math.random() * Math.PI * 2, r = 80 + Math.random() * 80;
@@ -776,12 +926,18 @@ function localEvent(e) {
       audio.dirt();
       break;
     case 'lightning': fx.bolt(e.x1, e.y1, e.x2, e.y2); audio.crack(); break;
-    case 'laser': fx.beam(e.x1, e.y1, e.x2, e.y2); break;
+    case 'laser':
+      if (e.kind === 'skylance') { fx.beam(e.x1, e.y1, e.x2, e.y2, ['#00d2d3', '#7efff5', '#ffffff']); fx.addShake(8); audio.zap(); }
+      else fx.beam(e.x1, e.y1, e.x2, e.y2);
+      break;
+    case 'skylanceMark': fx.ring(e.x, e.y, 40, '#00d2d3', 0.5); audio.tick(); break;
+    case 'repulse': fx.ring(e.x, e.y, e.r, '#a29bfe', 0.7); fx.addShake(6); break;
+    case 'tornado': audio.rumble(1.5); break;
     case 'shield': {
       const v = vt[e.tank];
       fx.ring(v.x, v.y - 10, 50, '#4bcffa', 0.8);
       fx.sparkle(v.x, v.y - 10, '#4bcffa');
-      G.st.tanks[e.tank].shield = 1;
+      if (!isFree()) G.st.tanks[e.tank].shield = 1;
       audio.shield();
       break;
     }
@@ -789,7 +945,7 @@ function localEvent(e) {
     case 'freeze':
       fx.ring(e.x, e.y, e.r * 1.6, '#c7f9ff', 0.8);
       fx.sparkle(e.x, e.y, '#c7f9ff', 40, 220);
-      for (const i of e.tanks) G.st.tanks[i].frozen = 1;
+      if (!isFree()) for (const i of e.tanks) G.st.tanks[i].frozen = 1;
       audio.freeze();
       break;
     case 'teleport':
@@ -816,7 +972,7 @@ function localEvent(e) {
       audio.explosion(110);
       const p = G.match.players[e.tank];
       if (p) showToast(`💀 ${p.name} destroyed!`);
-      G.st.tanks[e.tank].alive = false;
+      if (!isFree()) G.st.tanks[e.tank].alive = false;
       break;
     }
     default: break;
@@ -824,14 +980,13 @@ function localEvent(e) {
 }
 
 // Damage numbers come from the server's timeline (clients never decide damage).
-function serverEvent(e) {
-  const P = G.play;
+function serverEvent(P, e) {
   const shooter = G.match.players[P.shooter];
   if (e.type === 'damage') {
     const enemy = e.tank !== P.shooter && G.st.tanks[e.tank].team !== G.st.tanks[P.shooter].team;
     fx.number(e.x, e.y, `${enemy ? '+' : '-'}${e.amount}`, enemy ? shooter.color : '#ff5d5d', e.amount >= 40);
     if (enemy) P.hits.set(e.tank, (P.hits.get(e.tank) || 0) + e.amount);
-    if (G.st.mode === 'survival') G.st.tanks[e.tank].hp = Math.max(0, G.st.tanks[e.tank].hp - e.amount);
+    if (G.st.mode === 'survival' && !isFree()) G.st.tanks[e.tank].hp = Math.max(0, G.st.tanks[e.tank].hp - e.amount);
   } else if (e.type === 'heal') {
     const v = G.vt[e.tank];
     fx.number(v.x, v.y - 50, `+${e.amount}`, '#2ecc71');
@@ -840,19 +995,21 @@ function serverEvent(e) {
   }
 }
 
-function finishShot() {
-  const P = G.play;
-  if (!P) return;
+function finishShot(P) {
+  if (!G.plays.includes(P)) return;
   // drain events we didn't get to (tab hidden, etc.)
   while (P.srvI < P.srv.length) { const e = P.srv[P.srvI++]; if (e.type === 'tracer') P.tracer = e; }
   const shot = P.shot;
-  applyDiff(G.st.terrain, shot.terrain);
-  G.st.tanks = shot.tanks.map((t) => ({ ...t }));
-  G.st.mines = shot.mines.map((m) => ({ ...m }));
-  const h = hashState(G.st);
-  G.play = null;
-  if (h !== shot.hash) { console.warn('terrain/state hash mismatch: resyncing'); send('sync'); }
-  syncDisplayFromState();
+  G.plays = G.plays.filter((x) => x !== P);
+  if (!isFree()) applyShotResult(shot);
+  if (!busy()) syncDisplayFromState();
+  else {
+    // other shots still flying: just show this shot's terrain changes now
+    for (const [start, vals] of shot.terrain) {
+      for (let i = 0; i < vals.length; i++) G.dt[start + i] = G.st.terrain[start + i];
+      renderer.redrawTerrain(start, start + vals.length - 1);
+    }
+  }
   if (P.tracer) G.tracers.set(P.tracer.tank, { pts: P.tracer.pts, color: '#00ffd0' });
   const total = [...P.hits.values()].reduce((a, b) => a + b, 0);
   if (total > 0) {
@@ -861,7 +1018,7 @@ function finishShot() {
     banner(`${label} +${total}`, G.match.players[P.shooter].color);
   }
   renderHud();
-  if (shot.mineShots?.length) {
+  if (shot.mineShots?.length && !isFree()) {
     for (const ms of shot.mineShots.slice().reverse()) G.queue.unshift(() => startShot(ms));
   }
   drain();
@@ -869,13 +1026,16 @@ function finishShot() {
 
 // ---------- move animation ----------
 function startMove(msg) {
-  G.moving = { p: msg.player, path: msg.path, d: 0, msg };
+  const M = { p: msg.player, path: msg.path, d: 0, msg };
+  G.moves.push(M);
+  if (isFree()) G.st.tanks[msg.player] = { ...msg.tank };
   audio.move();
-  if (document.hidden) finishMove();
+  if (document.hidden) finishMove(M);
 }
-function updateMove(dt) {
-  const M = G.moving;
-  if (!M) return;
+function updateMoves(dt) {
+  for (const M of [...G.moves]) updateMove(M, dt);
+}
+function updateMove(M, dt) {
   M.d += dt * MOVE_SPEED;
   const i = Math.min(M.path.length - 1, Math.floor(M.d));
   const v = G.vt[M.p];
@@ -883,14 +1043,15 @@ function updateMove(dt) {
   v.y = surfaceY(G.dt, v.x);
   v.tilt = Math.max(-0.6, Math.min(0.6, slopeAt(G.dt, v.x)));
   v.wheel += dt * 8 * Math.sign(M.path[M.path.length - 1] - M.path[0]);
-  if (M.d >= M.path.length - 1) finishMove();
+  if (M.d >= M.path.length - 1) finishMove(M);
 }
-function finishMove() {
-  const M = G.moving;
-  G.moving = null;
-  G.st.tanks[M.p] = { ...M.msg.tank };
+function finishMove(M) {
+  if (!G.moves.includes(M)) return;
+  G.moves = G.moves.filter((x) => x !== M);
+  if (!isFree()) G.st.tanks[M.p] = { ...M.msg.tank }; // Free Fire applied it at the start (newer shots may have changed it since)
   if (G.turn) G.turn.moves = M.msg.moves;
-  syncDisplayFromState();
+  if (!busy()) syncDisplayFromState();
+  else { const v = G.vt[M.p], t = G.st.tanks[M.p]; v.x = t.x; v.y = t.y; v.tilt = t.tilt; }
   renderHud();
   drain();
 }
@@ -1094,20 +1255,25 @@ function wireSocket(sock) {
   sock.on('turn', (t) => enqueue(() => startTurnUi(t)));
   sock.on('aim', (a) => {
     const v = G.vt[a.player];
-    if (!v || (G.turn && G.turn.player === a.player && myTurn())) return;
+    if (!v || a.player === actor()) return;
     v.tAngle = a.angle;
   });
-  sock.on('moved', (m) => enqueue(() => startMove(m)));
-  sock.on('shot', (s) => enqueue(() => { if (G.turn && G.turn.player === s.input.shooter && s.input.weapon) G.turn.fired = true; startShot(s); }));
+  sock.on('moved', (m) => (isFree() ? startMove(m) : enqueue(() => startMove(m))));
+  sock.on('shot', (s) => {
+    if (isFree()) { startShot(s); return; }
+    enqueue(() => { if (G.turn && G.turn.player === s.input.shooter && s.input.weapon) G.turn.fired = true; startShot(s); });
+  });
+  sock.on('free', (m) => { if (!G.match || !G.st) return; startFreeUi(m); initFreeAim(); renderHud(); });
   sock.on('skipped', (m) => enqueue(() => {
     const p = G.match.players[m.player];
     const item = G.match.inv[m.player].find((w) => w.weapon === m.weapon && !w.used);
-    if (item) item.used = true;
+    if (item && !item.infinite) item.used = true;
+    if (G.match.shotsLeft[m.player] > 0) G.match.shotsLeft[m.player]--;
     if (G.turn) G.turn.fired = true;
     banner(`${G.me.includes(p.id) && G.me.length === 1 ? "Time's up!" : `${p.name}: time's up`}`, '#ff5d5d');
     renderHud();
   }));
-  sock.on('results', (res) => enqueue(() => { G.turn = null; showResults(res); }));
+  sock.on('results', (res) => enqueue(() => { G.turn = null; G.free = null; showResults(res); }));
   sock.on('chat', (m) => {
     addChat(m);
     const i = G.match?.players.findIndex((p) => p.id === m.from) ?? -1;
@@ -1124,50 +1290,36 @@ function wireSocket(sock) {
 // ---------- input ----------
 const canvas = $('canvas');
 const renderer = new Renderer(canvas);
-const SLING_DEAD_PX = 18;   // pulls shorter than this cancel
-const SLING_FULL_PX = 170;  // screen px of stretch for 100% power
 const fx = new FX();
 fx.shakeScale = prefs.shake;
 const input = createInput(canvas, {
-  // Slingshot aiming: press anywhere, pull back, release to fire.
-  // The shot goes opposite to the pull; the stretch length sets the power.
   drag(cx, cy, phase) {
     audio.unlock();
-    if (!myTurn() || G.play || G.moving) { G.sling = null; return; }
+    const me = actor();
+    if (me < 0) return;
     $('weapon-list').hidden = true;
-    const rect = canvas.getBoundingClientRect();
-    const x = cx - rect.left, y = cy - rect.top;
-    if (phase === 'start') {
-      G.sling = { ax: x, ay: y, px: x, py: y, power: 0, cancel: true, angle0: G.aim.angle, power0: G.aim.power };
-      return;
-    }
-    const s = G.sling;
-    if (!s) return;
-    s.px = x; s.py = y;
-    const dx = s.ax - x, dy = s.ay - y;
-    const stretch = Math.hypot(dx, dy);
-    s.cancel = stretch < SLING_DEAD_PX;
-    if (!s.cancel) {
-      let ang = Math.atan2(-dy, dx) / DEG;
-      if (ang < 0) ang = dx >= 0 ? 0 : 180;
-      const cap = G.turn.frozen ? FROZEN_POWER_CAP : 100;
-      s.power = Math.min(cap, ((stretch - SLING_DEAD_PX) / (SLING_FULL_PX - SLING_DEAD_PX)) * 100);
-      setAim(ang, s.power);
-    } else {
-      setAim(s.angle0, s.power0); // back at the anchor: the old aim comes back
-    }
-    if (phase === 'end') {
-      G.sling = null;
-      if (!s.cancel) { G.aimedOnce = true; fire(); }
-    }
+    const w = renderer.clientToWorld(cx, cy, G.cam);
+    const v = G.vt[me];
+    const dx = w.x - v.x, dy = w.y - (v.y - TURRET_PIVOT);
+    let ang = Math.atan2(-dy, dx) / DEG;
+    if (ang < 0) ang = dx >= 0 ? 0 : 180;
+    const pw = Math.hypot(dx, dy) / 2.6;
+    if (phase === 'start' && Math.hypot(dx, dy) < 12) return;
+    setAim(ang, pw);
   },
   key(action, fine, repeat) {
     audio.unlock();
     if (action === 'mute') { $('mute').checked = audio.toggleMute(); showToast(audio.muted ? 'Sound off' : 'Sound on'); return; }
     if (action === 'menu') { if (G.screen === 'game') $('menu').hidden = !$('menu').hidden; return; }
-    if (G.screen !== 'game' || !myTurn()) return false;
+    if (G.screen === 'draft' && !repeat) return draftNav(action);
+    if (G.screen !== 'game' || actor() < 0) return false;
+    if (!$('weapon-list').hidden && (action === 'fire' || !['moveLeft', 'moveRight'].includes(action))) {
+      if (action === 'openWeapons') { $('weapon-list').hidden = true; return true; }
+      return listNav(action);
+    }
     const st = fine ? 0.1 : 1;
     switch (action) {
+      case 'openWeapons': if (!repeat) openWeaponList(); break;
       case 'angleUp': setAim(G.aim.angle + st, G.aim.power); break;
       case 'angleDown': setAim(G.aim.angle - st, G.aim.power); break;
       case 'powerUp': setAim(G.aim.angle, G.aim.power + st); break;
@@ -1181,7 +1333,7 @@ const input = createInput(canvas, {
     }
     return true;
   },
-  stick(dA, dP) { if (myTurn()) setAim(G.aim.angle + dA, G.aim.power + dP); },
+  stick(dA, dP) { if (actor() >= 0) setAim(G.aim.angle + dA, G.aim.power + dP); },
 });
 window.addEventListener('pointerdown', () => audio.unlock(), { once: true });
 window.addEventListener('keydown', () => audio.unlock(), { once: true });
@@ -1189,9 +1341,9 @@ window.addEventListener('resize', () => renderer.resize());
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   // catch up instantly on anything that queued while the tab was in the background
-  if (G.queue.length > 1) {
-    if (G.play) finishShot();
-    if (G.moving) finishMove();
+  if (G.queue.length > 1 || G.plays.length > 2) {
+    for (const P of [...G.plays]) finishShot(P);
+    for (const M of [...G.moves]) finishMove(M);
   }
 });
 
@@ -1209,9 +1361,10 @@ function frame(now) {
   }
   if (G.screen !== 'game' || !G.st) return;
   input.pollGamepad(dt);
-  updateShot(dt);
-  updateMove(dt);
+  updateShots(dt);
+  updateMoves(dt);
   updateTimer(now);
+  updateFireButton(now);
   // turret tweening and recoil
   G.vt.forEach((v, i) => {
     v.angle += (v.tAngle - v.angle) * Math.min(1, dt * 6);
@@ -1221,14 +1374,34 @@ function frame(now) {
   });
   for (const [k, b] of G.bubbles) { b.t += dt; if (b.t > 4) G.bubbles.delete(k); }
   if (G.time < G.quakeUntil) fx.shake = Math.max(fx.shake, 8 * prefs.shake);
-  fx.update(dt, G.st.wind || 0);
+  fx.update(dt, 0);
   updateCamera(dt);
   renderer.draw(buildScene(), fx);
 }
 requestAnimationFrame(frame);
 
+// Free Fire: the FIRE button shows the reload.
+function updateFireButton(now) {
+  const b = $('btn-fire');
+  if (!isFree()) { if (b.dataset.r) { b.textContent = 'FIRE'; delete b.dataset.r; } return; }
+  const left = G.reloadUntil - now;
+  const label = left > 0 ? `${(left / 1000).toFixed(1)}s` : 'FIRE';
+  if (b.textContent !== label) b.textContent = label;
+  b.dataset.r = '1';
+  b.classList.toggle('reloading', left > 0);
+}
+
 function updateTimer(now) {
   const ring = $('timer-ring');
+  if (isFree() && G.free) {
+    const total = Math.max(1, G.match.settings.weapons * 8000);
+    const left = Math.max(0, G.freeEnds - now);
+    const secs = Math.ceil(left / 1000);
+    $('timer-text').textContent = secs >= 60 ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` : String(secs);
+    $('timer-arc').style.strokeDashoffset = String(119.4 * (1 - Math.min(1, left / total)));
+    ring.classList.toggle('low', secs <= 10);
+    return;
+  }
   const total = (G.match?.settings.turnTime || 0) * 1000;
   if (!total || !G.turn || G.turn.fired) { $('timer-text').textContent = total ? '' : '∞'; $('timer-arc').style.strokeDashoffset = '0'; ring.classList.remove('low'); return; }
   const left = Math.max(0, G.turnLocalDeadline - now);
@@ -1241,18 +1414,22 @@ function updateTimer(now) {
 
 function updateCamera(dt) {
   let tx = WORLD_W / 2, ty = WORLD_H / 2, tz = 1;
-  const cur = G.play?.history?.[G.play.history.length - 1];
+  const cur = isFree() ? null : G.history[G.history.length - 1]; // Free Fire keeps the whole map in view
   if (cur && cur.length) {
     // follow the lead projectile
     tx = cur[1]; ty = cur[2]; tz = 1.3;
+  } else if (renderer.portrait) {
+    // portrait shows part of the map: stay on your tank, or whoever is playing
+    const focus = actor() >= 0 ? actor() : isFree() ? mySeat() : G.turn?.player ?? -1;
+    if (focus >= 0 && G.vt[focus]) tx = G.vt[focus].x;
   }
   const k = Math.min(1, dt * (tz > 1 ? 2.5 : 1.8));
   G.cam.zoom += (tz - G.cam.zoom) * k;
   G.cam.x += (tx - G.cam.x) * k;
   G.cam.y += (ty - G.cam.y) * k;
-  const hw = WORLD_W / 2 / G.cam.zoom, hh = WORLD_H / 2 / G.cam.zoom;
-  G.cam.x = Math.max(hw, Math.min(WORLD_W - hw, G.cam.x));
-  G.cam.y = Math.max(hh, Math.min(WORLD_H - hh, G.cam.y));
+  const { hw, hh } = renderer.viewHalf(G.cam.zoom);
+  G.cam.x = hw >= WORLD_W / 2 ? WORLD_W / 2 : Math.max(hw, Math.min(WORLD_W - hw, G.cam.x));
+  G.cam.y = hh >= WORLD_H / 2 ? WORLD_H / 2 : Math.max(hh, Math.min(WORLD_H - hh, G.cam.y));
 }
 
 function buildScene() {
@@ -1262,22 +1439,21 @@ function buildScene() {
     return {
       x: v.x, y: v.y, tilt: v.tilt, angle: v.angle, recoil: v.recoil, wheel: v.wheel, color: p.color, style: p.style, name: p.name,
       hp: t.hp, shield: t.shield, frozen: t.frozen, alive: t.alive, bot: !!seat?.isBot, offline: seat && !seat.connected,
-      active: !!G.turn && !G.turn.fired && G.turn.player === i && !G.play, bubble: G.bubbles.get(i),
+      active: isFree() ? i === actor() : !!G.turn && !G.turn.fired && G.turn.player === i && !busy(), bubble: G.bubbles.get(i),
     };
   });
   let aim = null;
-  if (myTurn() && !G.play && !G.moving) {
-    const v = G.vt[G.turn.player];
+  const me = actor();
+  if (me >= 0) {
+    const v = G.vt[me];
     const pts = previewPath(st, { x: v.x, y: v.y }, G.aim.angle, G.aim.power);
-    const item = G.match.inv[G.turn.player].find((w) => w.slot === G.aim.slot);
+    const item = G.match.inv[me].find((w) => w.slot === G.aim.slot);
     const n = Math.max(2, Math.ceil(pts.length * 0.15));
-    aim = { pts: item && getWeapon(item.weapon).behavior === 'laser' ? laserGuide(v, n) : pts.slice(0, n), color: G.match.players[G.turn.player].color };
+    aim = { pts: item && getWeapon(item.weapon).behavior === 'laser' ? laserGuide(v, n) : pts.slice(0, n), color: G.match.players[me].color };
   }
   return {
-    time: G.time, cam: G.cam, tanks, mines: st.mines, history: G.play?.history || [], aim, survival, wind: st.wind,
+    time: G.time, cam: G.cam, tanks, mines: st.mines, history: G.history, aim, survival, wind: 0,
     tracers: [...G.tracers.values()],
-    sling: myTurn() && !G.play ? G.sling : null,
-    slingColor: G.turn ? G.match.players[G.turn.player].color : '#fff',
   };
 }
 
@@ -1293,7 +1469,8 @@ function laserGuide(v, n) {
 window.__ssa = {
   state: () => ({
     screen: G.screen, code: G.code, phase: G.room?.phase || null, me: G.me,
-    myTurn: myTurn(), playing: !!G.play || !!G.moving || G.queue.length > 0,
+    myTurn: actor() >= 0, playing: busy() || G.queue.length > 0, free: isFree(), seat: mySeat(),
+    shotsLeft: G.match?.shotsLeft || [], reloading: performance.now() < G.reloadUntil,
     turn: G.turn ? { player: G.turn.player, number: G.turn.number, fired: !!G.turn.fired } : null,
     hash: G.st ? hashState(G.st) : null,
     scores: G.st ? G.st.tanks.map((t) => t.score) : [],

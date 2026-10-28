@@ -2,11 +2,16 @@
 // No timers and no sockets: room.js drives it, and the headless tests drive it directly.
 
 import {
-  MOVES_PER_MATCH, MOVE_DISTANCE, WIND_MAX, POOL_EXTRA, MINE_TRIGGER, FROZEN_POWER_CAP,
+  MOVES_PER_MATCH, MOVE_DISTANCE, POOL_EXTRA, MINE_TRIGGER, FROZEN_POWER_CAP,
 } from '../../shared/tanks/constants.js';
 import { mulberry32 } from '../../shared/tanks/rng.js';
 import { MAPS, getMap, generateTerrain } from '../../shared/tanks/maps.js';
 import { WEAPONS, getWeapon, RARITY_WEIGHT } from '../../shared/tanks/weapons.js';
+
+// Unlimited arsenal: every weapon, reusable, except legendaries (one use each).
+export function fullArsenal() {
+  return WEAPONS.map((w, i) => ({ slot: i, weapon: w.id, used: false, ...(w.rarity === 'legendary' ? {} : { infinite: true }) }));
+}
 import { planMove, settleTank } from '../../shared/tanks/physics.js';
 import { simulateShot, makeTank, hashState, finalizeState, sameTeam } from '../../shared/tanks/simulate.js';
 import { terrainToInts, diffTerrain } from '../../shared/tanks/terrain.js';
@@ -45,17 +50,27 @@ export class Match {
     this.rng = mulberry32(seed);
     this.phase = 'draft';
     const n = this.players.length;
-    this.pool = drawPool(this.rng, settings.weapons * n + POOL_EXTRA);
-    this.order = snakeOrder(n, settings.weapons);
-    this.pick = 0;
-    this.inv = this.players.map(() => []);
+    this.shotsLeft = this.players.map(() => settings.weapons);
     this.stats = this.players.map(() => ({ damage: 0, self: 0, healed: 0, shots: 0, offensive: 0, hits: 0, terrain: 0, best: null }));
     this.state = null;
     this.turn = null;
     this.turnNo = 0;
     this.lastShooter = -1;
     this.winner = null;
+    this.pick = 0;
+    if (settings.arsenal === 'unlimited') {
+      this.pool = [];
+      this.order = [];
+      this.inv = this.players.map(() => fullArsenal());
+      this.startPlay();
+    } else {
+      this.pool = drawPool(this.rng, settings.weapons * n + POOL_EXTRA);
+      this.order = snakeOrder(n, settings.weapons);
+      this.inv = this.players.map(() => []);
+    }
   }
+
+  get free() { return this.settings.pace === 'free'; }
 
   // ---------- draft ----------
   get picker() { return this.phase === 'draft' ? this.order[this.pick] : -1; }
@@ -113,7 +128,13 @@ export class Match {
   }
 
   canPlay(i) {
-    return this.state.tanks[i].alive && this.inv[i].some((w) => !w.used);
+    return this.state.tanks[i].alive && this.shotsLeft[i] > 0 && this.inv[i].some((w) => !w.used);
+  }
+
+  // Who may act right now: the active player (turns) or any player with shots left (Free Fire).
+  canControl(player) {
+    if (this.phase !== 'play') return false;
+    return this.free ? this.canPlay(player) : this.isActive(player);
   }
 
   // Next turn. Detonates the player's own mines first (they can change the outcome).
@@ -135,10 +156,9 @@ export class Match {
       if (!this.canPlay(p)) continue;
       this.turnNo++;
       const tank = this.state.tanks[p];
-      this.state.wind = this.settings.wind ? this.rng.int(-WIND_MAX, WIND_MAX) : 0;
       this.turn = {
         player: p, number: this.turnNo, round: Math.min(this.settings.weapons, Math.floor((this.turnNo - 1) / n) + 1),
-        wind: this.state.wind, fired: false, frozen: tank.frozen > 0, moves: tank.moves,
+        fired: false, frozen: tank.frozen > 0, moves: tank.moves,
       };
       return { player: p, mineShots };
     }
@@ -156,9 +176,9 @@ export class Match {
   }
 
   move(player, dir) {
-    if (!this.isActive(player)) return { error: 'Not your turn' };
+    if (!this.canControl(player)) return { error: 'Not your turn' };
     const tank = this.state.tanks[player];
-    if (this.turn.frozen) return { error: 'Frozen' };
+    if (this.free ? tank.frozen > 0 : this.turn.frozen) return { error: 'Frozen' };
     if (tank.moves <= 0) return { error: 'No moves left' };
     if (dir !== -1 && dir !== 1) return { error: 'Bad direction' };
     const dist = Math.round(MOVE_DISTANCE * getMap(this.state.map).moveMult);
@@ -167,7 +187,7 @@ export class Match {
     tank.x = path[path.length - 1];
     settleTank(this.state.terrain, tank);
     tank.moves--;
-    this.turn.moves = tank.moves;
+    if (this.turn) this.turn.moves = tank.moves;
     finalizeState(this.state);
     const mineShots = this.mineCheck([player]);
     if (this.isOver()) this.finish([]);
@@ -184,15 +204,51 @@ export class Match {
     return out;
   }
 
-  fire(player, { slot, angle, power }) {
+  fire(player, msg) {
+    if (this.free) return { error: 'Free Fire match: use fireFree' };
     if (!this.isActive(player)) return { error: 'Not your turn' };
-    const item = this.inv[player].find((w) => w.slot === slot && !w.used);
+    const ok = this.checkShot(player, msg);
+    if (ok.error) return ok;
+    this.turn.fired = true;
+    const shot = this.shoot(player, ok.item, ok.angle, this.turn.frozen ? Math.min(ok.power, FROZEN_POWER_CAP) : ok.power);
+    this.endTurn();
+    return shot;
+  }
+
+  // Free Fire: anyone with shots left fires whenever the room says they've reloaded.
+  // Their own armed mines go off first (like the start of a turn). Returns { pre, shot }.
+  fireFree(player, msg) {
+    if (!this.free) return { error: 'Not a Free Fire match' };
+    if (!this.canControl(player)) return { error: 'No shots left' };
+    const ok = this.checkShot(player, msg);
+    if (ok.error) return ok;
+    for (const m of this.state.mines) m.armed = true;
+    const pre = this.state.mines.filter((m) => m.owner === player).map((m) => this.detonate(m));
+    if (!this.canPlay(player)) { if (this.isOver()) this.finish([]); return { pre, shot: null }; }
+    const tank = this.state.tanks[player];
+    const frozen = tank.frozen > 0;
+    const shot = this.shoot(player, ok.item, ok.angle, frozen ? Math.min(ok.power, FROZEN_POWER_CAP) : ok.power);
+    if (frozen) this.state.tanks[player].frozen = 0;
+    this.wearShields(player);
+    if (this.isOver()) this.finish([]);
+    shot.shotsLeft = [...this.shotsLeft];
+    // statuses that changed after the shot (thaw, shields wearing off): clients apply these
+    // once the shot and any mines it set off are applied, so their next replay starts in sync
+    shot.after = { tanks: this.publicTanks(), hash: hashState(this.state) };
+    return { pre, shot };
+  }
+
+  checkShot(player, { slot, angle, power }) {
+    const item = this.inv[player].find((w) => w.slot === Number(slot) && !w.used);
     if (!item) return { error: 'Weapon not available' };
     angle = Number(angle); power = Number(power);
     if (!Number.isFinite(angle) || !Number.isFinite(power) || angle < 0 || angle > 180 || power < 0 || power > 100) return { error: 'Bad aim' };
-    if (this.turn.frozen) power = Math.min(power, FROZEN_POWER_CAP);
-    item.used = true;
-    this.turn.fired = true;
+    return { item, angle, power };
+  }
+
+  shoot(player, item, angle, power) {
+    if (!item.infinite) item.used = true;
+    this.shotsLeft[player]--;
     const input = { shooter: player, weapon: item.weapon, angle: Math.round(angle * 10) / 10, power: Math.round(power * 10) / 10 };
     const before = this.state.tanks.map((t) => t.x);
     const seed = this.rng.seed();
@@ -200,15 +256,16 @@ export class Match {
     const shot = this.applyShot(input, seed, res, item.weapon);
     const moved = this.state.tanks.map((t, i) => i).filter((i) => Math.abs(this.state.tanks[i].x - before[i]) > 2);
     shot.mineShots = this.mineCheck(moved);
-    this.endTurn();
     return shot;
   }
 
   // Turn timer ran out: the shot is lost (its weapon is discarded, so the match still ends).
   skip(player) {
     if (!this.isActive(player)) return { error: 'Not your turn' };
-    const item = this.inv[player].find((w) => !w.used);
-    if (item) { item.used = true; item.skipped = true; }
+    // the shot is lost; with a drafted arsenal its weapon is discarded too
+    const item = this.inv[player].find((w) => !w.used && !w.infinite);
+    if (item && this.settings.arsenal !== 'unlimited') { item.used = true; item.skipped = true; }
+    this.shotsLeft[player]--;
     this.turn.fired = true;
     this.endTurn();
     return { ok: true, weapon: item?.weapon };
@@ -234,6 +291,7 @@ export class Match {
       events: res.events,
       terrain: diffTerrain(before.terrain, this.state.terrain),
       tanks: this.publicTanks(), mines: this.state.mines.map((m) => ({ ...m })),
+      shotsLeft: [...this.shotsLeft],
     };
   }
 
@@ -241,11 +299,20 @@ export class Match {
     const p = this.turn.player;
     const me = this.state.tanks[p];
     if (this.turn.frozen) me.frozen = 0;
-    // shields wear off after 2 enemy turns
+    this.wearShields(p);
+    if (this.isOver()) this.finish([]);
+  }
+
+  // Shields wear off after 2 enemy turns (Free Fire: 2 enemy shots).
+  wearShields(p) {
     this.state.tanks.forEach((t, i) => {
       if (t.shield > 0 && i !== p && !sameTeam(this.state, i, p) && --t.shieldTurns <= 0) { t.shield = 0; t.shieldTurns = 0; }
     });
-    if (this.isOver()) this.finish([]);
+  }
+
+  // Free Fire match clock ran out.
+  finishNow() {
+    if (this.phase === 'play') this.finish([]);
   }
 
   isOver() {
@@ -323,6 +390,7 @@ export class Match {
       settings: this.settings,
       pool: this.pool, order: this.order, pick: this.pick,
       inv: this.inv,
+      shotsLeft: this.shotsLeft,
       state: this.state && {
         map: this.state.map, terrain: terrainToInts(this.state.terrain), wind: this.state.wind, mode: this.state.mode,
         friendlyFire: this.state.friendlyFire, walls: this.state.walls, tanks: this.publicTanks(),

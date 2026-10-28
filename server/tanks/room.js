@@ -4,7 +4,7 @@
 import {
   MAX_PLAYERS, MIN_PLAYERS, DEFAULT_SETTINGS, WEAPON_COUNTS, TURN_TIMES, DRAFT_PICK_SECONDS, STEP_RATE,
   RECONNECT_SECONDS, EMPTY_ROOM_MINUTES, BOT_THINK_MS, SHOT_END_PAUSE_MS, NAME_MAX, CHAT_MAX, CHAT_PER_10S,
-  EMOJIS, TANK_COLORS, TANK_STYLES,
+  EMOJIS, TANK_COLORS, TANK_STYLES, FREE_RELOAD_MS, FREE_SECONDS_PER_ROUND, FREE_MIN_SECONDS,
 } from '../../shared/tanks/constants.js';
 import { MAP_IDS } from '../../shared/tanks/maps.js';
 import { mulberry32 } from '../../shared/tanks/rng.js';
@@ -65,6 +65,8 @@ export class Room {
     this.timers.clear();
     this.turnTimer = null;
     this.draftTimer = null;
+    this.freeClock = null;
+    this.ending = false;
   }
 
   destroy() {
@@ -150,6 +152,7 @@ export class Room {
     m.connected = true;
     if (this.isTurnOf(m.id)) this.scheduleActor();
     if (this.phase === 'draft' && this.match.picker === this.seatIndex(m.id)) this.scheduleDraftActor();
+    if (this.phase === 'match' && this.match.free) this.scheduleFreeBot(this.seatIndex(m.id));
   }
 
   disconnect(socketId) {
@@ -236,9 +239,11 @@ export class Room {
     if (raw.map === 'random' || MAP_IDS.includes(raw.map)) s.map = raw.map;
     if (WEAPON_COUNTS.includes(raw.weapons)) s.weapons = raw.weapons;
     if (TURN_TIMES.includes(raw.turnTime)) s.turnTime = raw.turnTime;
-    for (const k of ['wind', 'friendlyFire', 'teams', 'public']) if (typeof raw[k] === 'boolean') s[k] = raw[k];
+    for (const k of ['friendlyFire', 'teams', 'public']) if (typeof raw[k] === 'boolean') s[k] = raw[k];
     if (['none', 'wrap', 'bounce'].includes(raw.walls)) s.walls = raw.walls;
-    if (this.local) s.public = false;
+    if (raw.pace === 'turns' || raw.pace === 'free') s.pace = raw.pace;
+    if (raw.arsenal === 'draft' || raw.arsenal === 'unlimited') s.arsenal = raw.arsenal;
+    if (this.local) { s.public = false; s.pace = 'turns'; } // one device can't aim two tanks at once
     this.broadcastRoom();
   }
 
@@ -267,8 +272,9 @@ export class Room {
     const seed = (Math.random() * 2 ** 32) >>> 0;
     this.botRng = mulberry32(seed ^ 0x9e3779b9);
     this.match = new Match(this.seated().map((m) => ({ id: m.id, name: m.name, color: m.color, style: m.style, team: m.team })), this.settings, seed);
-    this.phase = 'draft';
     this.lastActive = Date.now();
+    if (this.match.phase !== 'draft') return this.beginPlay(); // unlimited arsenal: no draft
+    this.phase = 'draft';
     this.broadcastRoom();
     this.broadcastMatch();
     this.nextPick();
@@ -325,7 +331,64 @@ export class Room {
     this.phase = 'match';
     this.broadcastRoom();
     this.broadcastMatch();
-    this.later(1200, () => this.nextTurn());
+    this.later(1200, () => (this.match.free ? this.startFree() : this.nextTurn()));
+  }
+
+  // ---------- Free Fire ----------
+  // No turns: everyone fires whenever reloaded. The match ends when all shots are used,
+  // one side is left (Survival), or the clock runs out.
+  startFree() {
+    if (this.phase !== 'match') return;
+    const secs = Math.max(FREE_MIN_SECONDS, this.settings.weapons * FREE_SECONDS_PER_ROUND);
+    this.freeEndsAt = Date.now() + (secs * 1000) / this.fast;
+    this.reloadUntil = this.match.players.map(() => 0);
+    this.broadcast('free', { duration: (secs * 1000) / this.fast, reload: FREE_RELOAD_MS / this.fast, shotsLeft: this.match.shotsLeft });
+    this.freeClock = this.later(secs * 1000, () => { this.match.finishNow(); this.endMatch(); });
+    this.match.players.forEach((_, i) => this.scheduleFreeBot(i, 400 + Math.random() * 800));
+  }
+
+  // Seat the socket plays in a Free Fire match.
+  freeSeat(socketId) {
+    if (this.phase !== 'match' || !this.match?.free) return -1;
+    return this.match.players.findIndex((pl) => this.controls(socketId, pl.id));
+  }
+
+  freeFire(p, msg) {
+    const now = Date.now();
+    if (now < this.reloadUntil[p]) return { error: 'Reloading' };
+    const res = this.match.fireFree(p, msg);
+    if (res.error) return res;
+    this.reloadUntil[p] = now + FREE_RELOAD_MS / this.fast;
+    let longest = 0;
+    for (const shot of [...res.pre, res.shot].filter(Boolean)) {
+      shot.final = this.match.phase === 'over';
+      this.broadcast('shot', shot);
+      longest = Math.max(longest, shotDuration(shot));
+    }
+    if (this.match.phase === 'over' && !this.ending) {
+      this.ending = true;
+      this.cancel(this.freeClock);
+      this.later(longest + SHOT_END_PAUSE_MS, () => this.endMatch());
+    }
+    return { ok: true, reload: FREE_RELOAD_MS / this.fast };
+  }
+
+  scheduleFreeBot(p, delay) {
+    const m = this.memberAt(p);
+    if (!m || !m.isBot || !this.match?.free) return;
+    const think = BOT_THINK_MS[0] + Math.random() * (BOT_THINK_MS[1] - BOT_THINK_MS[0]);
+    // later() takes game-time ms; reloadUntil is wall-clock (already sped up by `fast`)
+    const wait = delay ?? Math.max(0, ((this.reloadUntil?.[p] || 0) - Date.now()) * this.fast);
+    this.later(Math.max(10, wait + think * 0.5), () => {
+      if (this.phase !== 'match' || this.match.phase !== 'play' || !m.isBot || !this.match.canPlay(p)) return;
+      const plan = planBotTurn(this.match, p, m.bot, this.botRng, { noMove: true });
+      this.broadcast('aim', { player: p, angle: plan.angle, power: plan.power, slot: plan.slot });
+      this.later(500, () => {
+        if (this.phase !== 'match' || this.match.phase !== 'play' || !m.isBot || !this.match.canPlay(p)) return;
+        const r = this.freeFire(p, plan);
+        this.scheduleFreeBot(p, r.error === 'Reloading' ? 300 : undefined);
+      });
+    });
   }
 
   isTurnOf(memberId) {
@@ -402,7 +465,7 @@ export class Room {
   }
 
   aim(socketId, { angle, power, slot }) {
-    const p = this.activeFor(socketId);
+    const p = this.match?.free ? this.freeSeat(socketId) : this.activeFor(socketId);
     if (p < 0) return;
     const a = Number(angle), pw = Number(power);
     if (!Number.isFinite(a) || !Number.isFinite(pw)) return;
@@ -410,7 +473,7 @@ export class Room {
   }
 
   move(socketId, dir) {
-    const p = this.activeFor(socketId);
+    const p = this.match?.free ? this.freeSeat(socketId) : this.activeFor(socketId);
     if (p < 0) return { error: 'Not your turn' };
     const res = this.match.move(p, dir === -1 ? -1 : dir === 1 ? 1 : 0);
     if (res.error) return res;
@@ -426,7 +489,7 @@ export class Room {
       this.later(delay, () => this.broadcast('shot', shot));
       delay += shotDuration(shot);
     }
-    if (this.match.phase === 'over') this.later(delay, () => this.endMatch());
+    if (this.match.phase === 'over') { if (!this.ending) { this.ending = true; this.later(delay, () => this.endMatch()); } }
     else if (this.match.state.tanks[p] && !this.match.state.tanks[p].alive && this.match.turn) {
       this.match.skip(p);
       this.afterShot(delay);
@@ -434,6 +497,10 @@ export class Room {
   }
 
   fire(socketId, msg) {
+    if (this.match?.free) {
+      const p = this.freeSeat(socketId);
+      return p < 0 ? { error: 'Not in this match' } : this.freeFire(p, msg);
+    }
     const p = this.activeFor(socketId);
     if (p < 0) return { error: 'Not your turn' };
     return this.doFire(p, msg);
@@ -456,6 +523,9 @@ export class Room {
   endMatch() {
     if (this.phase !== 'match') return;
     this.cancel(this.turnTimer);
+    this.cancel(this.freeClock);
+    this.ending = false;
+    if (this.match.phase !== 'over') this.match.finishNow();
     this.phase = 'results';
     const res = this.match.winner;
     if (!res.tie) {
@@ -556,6 +626,10 @@ export class Room {
   matchView() {
     const snap = this.match.snapshot();
     snap.pickDeadline = this.match.pickDeadline;
+    if (this.match.free && this.freeEndsAt) {
+      const now = Date.now();
+      snap.free = { endsIn: Math.max(0, this.freeEndsAt - now), reload: FREE_RELOAD_MS / this.fast, reloadIn: (this.reloadUntil || []).map((t) => Math.max(0, t - now)) };
+    }
     if (snap.turn) snap.turn = { ...snap.turn };
     return snap;
   }

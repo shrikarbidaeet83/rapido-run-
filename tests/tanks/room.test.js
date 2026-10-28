@@ -33,7 +33,7 @@ test('lobby: host controls, ready checks, colors are unique, kick and host hand-
   assert.notEqual(a.color, b.color, 'second player gets a free color');
   room.setSettings(b.id, { mode: 'survival' });
   assert.equal(room.settings.mode, 'classic', 'only the host changes settings');
-  room.setSettings(a.id, { mode: 'survival', weapons: 15, turnTime: 45, map: 'moon', walls: 'bounce', wind: false, bogus: 1 });
+  room.setSettings(a.id, { mode: 'survival', weapons: 15, turnTime: 45, map: 'moon', walls: 'bounce', bogus: 1 });
   assert.equal(room.settings.mode, 'survival');
   assert.equal(room.settings.weapons, 15);
   assert.equal(room.settings.map, 'moon');
@@ -154,5 +154,34 @@ test('local (same device) rooms: one socket controls both seats', async () => {
   await until(() => room.phase === 'draft');
   const res = room.pick('dev', room.match.pool.find((p) => p.by < 0).slot);
   assert.ok(res.ok, 'the device picks for whichever seat is up');
+  room.destroy();
+});
+
+test('Free Fire room: no draft (unlimited), bots shoot on reload, the match ends with results', async () => {
+  const room = makeRoom();
+  const a = room.join(1);
+  room.addBot(a.id, 'easy'); room.addBot(a.id, 'medium');
+  room.setSettings(a.id, { pace: 'free', arsenal: 'unlimited', weapons: 5 });
+  room.setReady(a.id, true);
+  assert.ok(room.start(a.id).ok);
+  assert.equal(room.phase, 'match', 'straight to the match');
+  await until(() => events(room, 'free').length === 1);
+  // the human fires too, without waiting for a turn
+  const slot = room.match.inv[0].find((w) => w.weapon === 'single').slot;
+  assert.ok(room.fire('s1', { slot, angle: 60, power: 50 }).ok);
+  assert.equal(room.fire('s1', { slot, angle: 60, power: 50 }).error, 'Reloading');
+  await until(() => room.phase === 'results', 60000);
+  const shooters = new Set(events(room, 'shot').map((l) => l.data.input.shooter));
+  assert.ok(shooters.has(1) && shooters.has(2), 'both bots fired');
+  assert.equal(events(room, 'turn').length, 0, 'no turns in Free Fire');
+  room.destroy();
+  assert.equal(room.timers.size, 0);
+});
+
+test('local rooms always use turns', () => {
+  const room = makeRoom({ local: true });
+  const a = room.join(1, 'dev');
+  room.setSettings(a.id, { pace: 'free' });
+  assert.equal(room.settings.pace, 'turns');
   room.destroy();
 });

@@ -31,11 +31,22 @@ test('direct hit bonus is +25%', () => {
   assert.equal(st.tanks[0].score, 50);
 });
 
-test('self damage costs points in Classic', () => {
-  const st = flatState([200, 800]);
-  sim(st).explode(200, 590, 30, 30, { carve: false });
-  assert.equal(st.tanks[0].score, -30);
-  assert.equal(st.tanks[0].hp, 100, 'no HP loss in Classic');
+test('the attacker is immune to its own attack (blast, fall, mine)', () => {
+  const st = flatState([200, 800], { mode: 'survival' });
+  const s = sim(st);
+  s.explode(200, 590, 60, 80, { direct: 0 });
+  assert.equal(st.tanks[0].hp, 100, 'no damage from its own blast');
+  assert.equal(st.tanks[0].score, 0, 'and no points lost');
+  for (let x = 170; x <= 230; x++) st.terrain[x] = 700;
+  s.markDirty([170, 230]);
+  s.settleAll();
+  assert.equal(st.tanks[0].y, 700, 'it still falls');
+  assert.equal(st.tanks[0].hp, 100, 'but takes no fall damage from its own shot');
+  // its own mine
+  const m = flatState([200, 800], { mode: 'survival' });
+  m.mines.push({ id: 1, x: 200, y: 600, owner: 0, armed: true });
+  const r = simulateShot(m, { shooter: 0, mine: 1 }, 1);
+  assert.equal(r.state.tanks[0].hp, 100);
 });
 
 test('friendly fire: teammates cost points when on, are immune when off', () => {

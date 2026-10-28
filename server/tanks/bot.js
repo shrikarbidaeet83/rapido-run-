@@ -1,5 +1,5 @@
 // AI players. They aim by simulating candidate shots with the shared physics:
-// a fast ballistic probe over angle/power (wind included) finds shots that land near the
+// a fast ballistic probe over angle/power finds shots that land near the
 // target, then the best few are scored with the real simulateShot (damage dealt - self damage).
 
 import { WORLD_W, GROUND_MAX, DT, SUBSTEP_PX, SHIELD_HP } from '../../shared/tanks/constants.js';
@@ -95,7 +95,13 @@ function searchAim(state, me, target, weaponId, level, rng, seed) {
 // Returns { slot, angle, power } or { move: -1|1 }.
 export function planBotTurn(match, me, level = 'medium', rng = Math.random, { noMove = false } = {}) {
   const state = match.state;
-  const items = match.inv[me].filter((w) => !w.used);
+  let items = match.inv[me].filter((w) => !w.used);
+  // unlimited arsenal: think about a random handful so bots don't fire the same favourite forever
+  if (items.length > 12) {
+    const pool = [...items];
+    items = [];
+    while (items.length < 8 && pool.length) items.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
+  }
   const tank = state.tanks[me];
   const target = pickTarget(state, me, level, rng);
   const seed = Math.floor(rng() * 2 ** 31);
@@ -130,7 +136,7 @@ export function planBotTurn(match, me, level = 'medium', rng = Math.random, { no
     const aim = searchAim(state, me, target, item.weapon, level, rng, seed);
     if (!best || aim.score > best.score) best = { ...aim, slot: item.slot };
   }
-  if (level === 'hard' && !noMove && best.score < 6 && tank.moves > 0 && !match.turn?.frozen) {
+  if (level === 'hard' && !noMove && best.score < 6 && tank.moves > 0 && !tank.frozen) {
     return { move: state.tanks[target].x > tank.x ? 1 : -1 };
   }
   return jitter(best);

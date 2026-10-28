@@ -10,7 +10,7 @@ export const MAPS = [
     sky: ['#5fb4f0', '#a9dcff', '#e3f4ff'], ground: ['#6aa84f', '#5b3d22', '#3b2614'], edge: '#8fe060', strata: '#4a3019',
   },
   {
-    id: 'dunes', name: 'Desert Dunes', rule: 'Stronger wind', gravity: 1, windMult: 1.6, moveMult: 1,
+    id: 'dunes', name: 'Desert Dunes', rule: 'Normal', gravity: 1, windMult: 1, moveMult: 1,
     sky: ['#3b1f5c', '#e0663a', '#ffc26b'], ground: ['#e2b25c', '#c48a3f', '#8d5a26'], edge: '#ffe3a1', strata: '#a87134',
   },
   {
@@ -22,7 +22,7 @@ export const MAPS = [
     sky: ['#1a0505', '#5c1208', '#b8340f'], ground: ['#3a2a28', '#2a1c1a', '#140c0b'], edge: '#ff7a2a', strata: '#ff4d1a',
   },
   {
-    id: 'moon', name: 'Moon Base', rule: 'Low gravity (0.4×)', gravity: 0.4, windMult: 0.5, moveMult: 1,
+    id: 'moon', name: 'Moon Base', rule: 'Low gravity (0.4×)', gravity: 0.4, windMult: 1, moveMult: 1,
     sky: ['#000004', '#05060f', '#0d1020'], ground: ['#a7a9ad', '#6e7075', '#3c3e42'], edge: '#d9dadc', strata: '#55575c',
   },
   {

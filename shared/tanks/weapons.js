@@ -55,6 +55,27 @@ export const WEAPONS = [
   { id: 'wall', name: 'Mega Wall', icon: '▮', rarity: 'common', color: '#8d6e63', behavior: 'wall', params: { w: 30, h: 180 }, desc: 'Builds a 30 × 180 px dirt wall.' },
   { id: 'magnet', name: 'Magnet Pulse', icon: '🧲', rarity: 'rare', color: '#e84393', behavior: 'magnet', params: { range: 250, pull: 80, dmg: 15 }, desc: 'Pulls enemies within 250 px up to 80 px in, 15 dmg.' },
   { id: 'nuke', name: 'Nuke', icon: '☢', rarity: 'legendary', color: '#fffa65', behavior: 'shell', params: { r: 150, dmg: 80, speed: 0.75, craterR: 120, fx: 'nuke' }, desc: 'Slow shell. Radius 150, 80 damage, huge crater.' },
+  // ---- C. power pack ----
+  { id: 'railgun', name: 'Rail Gun', icon: '⚌', rarity: 'epic', color: '#7d5fff', behavior: 'laser', params: { perPower: 16, dmg: 60, cut: 7 }, desc: 'Instant hyper-velocity slug (power × 16 px). Pierces every tank in line for 60.' },
+  { id: 'twinmissile', name: 'Twin Missiles', icon: '🚀', rarity: 'epic', color: '#c8d6e5', behavior: 'homing', params: { n: 2, gap: 10, spread: 6, r: 30, dmg: 28, turn: 2.2 }, desc: 'Two homing missiles that hunt the nearest enemy.' },
+  { id: 'mortar', name: 'Mortar Barrage', icon: '💥', rarity: 'rare', color: '#e17055', behavior: 'burst', params: { n: 5, gap: 14, r: 30, dmg: 18, jitter: 4 }, desc: '5 heavy mortar rounds in quick succession.' },
+  { id: 'gravity', name: 'Gravity Bomb', icon: '🌑', rarity: 'epic', color: '#6c5ce7', behavior: 'repulse', params: { r: 30, dmg: 20, range: 200, push: 90 }, desc: 'Blasts tanks within 200 px up to 90 px away (fall damage!).' },
+  { id: 'shockwave', name: 'Shockwave', icon: '◎', rarity: 'rare', color: '#81ecec', behavior: 'shell', params: { r: 170, dmg: 28, craterR: 22 }, desc: 'Enormous 170 px blast radius, small crater.' },
+  { id: 'bunker', name: 'Bunker Buster', icon: '🔻', rarity: 'epic', color: '#636e72', behavior: 'drill', params: { depth: 130, r: 70, dmg: 55 }, desc: 'Digs 130 px into cover, then detonates (radius 70, 55 dmg).' },
+  { id: 'skylance', name: 'Sky Lance', icon: '⇓', rarity: 'epic', color: '#00d2d3', behavior: 'skylance', params: { dmg: 55, width: 16, delay: 0.4 }, desc: 'Marks the spot, then an orbital beam strikes straight down for 55.' },
+  { id: 'minefield', name: 'Scatter Mines', icon: '⁘', rarity: 'rare', color: '#ff4757', behavior: 'minefield', params: { n: 3, spread: 90 }, desc: 'Scatters 3 sticky mines across the landing zone.' },
+  { id: 'tornado', name: 'Tornado', icon: '🌪', rarity: 'epic', color: '#a4b0be', behavior: 'tornado', params: { life: 3, speed: 140, lift: 300, dmg: 14 }, desc: 'A twister races along the ground, tossing tanks into the air.' },
+  { id: 'frostnova', name: 'Frost Nova', icon: '❅', rarity: 'epic', color: '#dff9fb', behavior: 'ice', params: { r: 150, dmg: 12, craterR: 30 }, desc: 'Freezes every tank within 150 px.' },
+  { id: 'plasma', name: 'Plasma Burst', icon: '✷', rarity: 'rare', color: '#fd79a8', behavior: 'firework', params: { n: 8, r: 24, dmg: 12, speed: 220 }, desc: 'Bursts at its apex into 8 plasma orbs, 12 dmg each.' },
+  { id: 'superball', name: 'Super Ball', icon: '🔴', rarity: 'rare', color: '#ff3f34', behavior: 'betty', params: { bounces: 6, restitution: 0.85, r: 22, dmg: 10 }, desc: 'Super-bouncy ball: 6 bounces, a blast on each.' },
+  { id: 'shaker', name: 'Earth Shaker', icon: '⛰', rarity: 'legendary', color: '#e1b12c', behavior: 'quake', params: { range: 450, life: 2.5, dmg: 15 }, desc: 'Massive quake: breaks the ground within 450 px, +15 dmg.' },
+  { id: 'swarm', name: 'Rocket Swarm', icon: '🎇', rarity: 'epic', color: '#ffbe76', behavior: 'homing', params: { n: 6, gap: 7, spread: 14, r: 20, dmg: 12, turn: 3 }, desc: '6 mini homing rockets fired in a stream.' },
+  { id: 'fireball', name: 'Fireball', icon: '☀', rarity: 'rare', color: '#ff7f00', behavior: 'napalm', params: { r: 40, dmg: 30, n: 14, life: 2.5, tickDmg: 2 }, desc: 'A blazing ball: big blast plus burning splash.' },
+  { id: 'fortress', name: 'Fortress', icon: '🏰', rarity: 'common', color: '#a1887f', behavior: 'fortress', params: { w: 24, h: 110, gap: 46 }, desc: 'Not fired: raises dirt walls on both sides of your tank.' },
+  { id: 'vampire', name: 'Vampire Swarm', icon: '🦇', rarity: 'epic', color: '#b33939', behavior: 'spread', params: { n: 3, spread: 10, r: 26, dmg: 18, leech: true }, desc: '3 leeching shells: you gain whatever they deal.' },
+  { id: 'comet', name: 'Comet', icon: '🌠', rarity: 'epic', color: '#ff9f43', behavior: 'meteor', params: { n: 1, area: 0, r: 80, dmg: 55 }, desc: 'Calls one huge comet down on the impact point (radius 80, 55 dmg).' },
+  { id: 'hydra', name: 'Hydra', icon: '🐉', rarity: 'epic', color: '#20bf6b', behavior: 'hydra', params: { n: 3, r: 22, dmg: 14 }, desc: 'Splits into 3 at its apex, and each of those splits into 3 again.' },
+  { id: 'trench', name: 'Excavator', icon: '⛏', rarity: 'common', color: '#cd853f', behavior: 'trench', params: { width: 90, depth: 60, r: 20, dmg: 15 }, desc: 'Scoops out a wide flat trench (great for dropping tanks).' },
 ];
 
 export const WEAPON_IDS = WEAPONS.map((w) => w.id);
@@ -64,6 +85,16 @@ export function getWeapon(id) {
 }
 export const RARITY_WEIGHT = { common: 4, rare: 3, epic: 2, legendary: 1 };
 export const CLASSIC_IDS = WEAPON_IDS.slice(0, 20);
+
+// Power tier 1-5 for the UI (how hard a weapon hits overall).
+export function weaponPower(w) {
+  const p = w.params;
+  if (!p.dmg) return 1;
+  const shots = { spread: p.n, burst: p.n, airstrike: p.n, hail: p.n, cluster: p.n, firework: p.n, meteor: p.n, homing: p.n, chain: p.n, splitter: p.n, hydra: p.n * p.n, betty: p.bounces, skipper: p.skips }[w.behavior] || 1;
+  const extra = { napalm: (p.tickDmg || 0) * 8, quake: 20, tornado: 15, repulse: 20, ice: 15, volcano: 20 }[w.behavior] || 0;
+  const v = (p.dmg * shots * 0.75 + extra) * (p.r ? Math.min(1.8, 0.7 + p.r / 80) : 1.2);
+  return v < 22 ? 1 : v < 40 ? 2 : v < 60 ? 3 : v < 80 ? 4 : 5;
+}
 
 // Short stats line for tooltips.
 export function weaponStats(w) {
@@ -417,23 +448,12 @@ export const BEHAVIORS = {
   },
 
   homing(sim, P, c) {
-    sim.fire(c.angle, c.power, {
-      ...shellOpts(P),
-      onApex(s, p) { p.target = s.nearestEnemy(p.x, p.y); },
-      onStep(s, p) {
-        if (p.target == null || p.target < 0) return;
-        const tk = s.s.tanks[p.target];
-        if (!tk.alive) return;
-        const want = Math.atan2(tk.y - 9 - p.y, tk.x - p.x);
-        const cur = Math.atan2(p.vy, p.vx);
-        let diff = want - cur;
-        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-        const turn = Math.max(-P.turn * DEG, Math.min(P.turn * DEG, diff));
-        const sp = Math.hypot(p.vx, p.vy);
-        p.vx = Math.cos(cur + turn) * sp;
-        p.vy = Math.sin(cur + turn) * sp;
-      },
-    });
+    const n = P.n || 1, spread = P.spread || 0;
+    for (let k = 0; k < n; k++) {
+      const ang = n > 1 ? c.angle - spread / 2 + (k * spread) / (n - 1) : c.angle;
+      if (k === 0) homingShot(sim, P, ang, c.power);
+      else sim.after(k * (P.gap || 6), (s) => { if (s.tank.alive) homingShot(s, P, ang, c.power); });
+    }
   },
 
   laser(sim, P, c) {
@@ -504,7 +524,7 @@ export const BEHAVIORS = {
     sim.fire(c.angle, c.power, {
       ...shellOpts(P),
       onHit(s, p, hit) {
-        s.explode(p.x, p.y, P.r, P.dmg, { direct: hit.tank, kind: 'ice' });
+        s.explode(p.x, p.y, P.r, P.dmg, { direct: hit.tank, kind: 'ice', craterR: P.craterR });
         const frozen = [];
         s.s.tanks.forEach((tk, i) => {
           if (tk.alive && distToTank(tk, p.x, p.y) < P.r) { tk.frozen = 1; frozen.push(i); }
@@ -621,7 +641,7 @@ export const BEHAVIORS = {
         s.explode(p.x, p.y, 25, 0, { carve: false, kind: 'firework' });
         for (let k = 0; k < P.n; k++) {
           const a = (k / P.n) * Math.PI * 2;
-          s.shell({ ...shellOpts(P), style: `spark${k % 4}`, x: p.x, y: p.y, vx: p.vx * 0.3 + Math.cos(a) * 160, vy: Math.sin(a) * 160 - 40, safe: false });
+          s.shell({ ...shellOpts(P), style: `spark${k % 4}`, x: p.x, y: p.y, vx: p.vx * 0.3 + Math.cos(a) * (P.speed || 160), vy: Math.sin(a) * (P.speed || 160) - 40, safe: false });
         }
       },
     });
@@ -630,14 +650,7 @@ export const BEHAVIORS = {
   mine(sim, P, c) {
     sim.fire(c.angle, c.power, {
       style: P.style,
-      onHit(s, p) {
-        const st = s.s;
-        const x = Math.max(4, Math.min(WORLD_W - 4, p.x));
-        const m = { id: st.nextMine++, x, y: groundAt(st.terrain, x), owner: s.shooter, armed: false };
-        st.mines.push(m);
-        if (st.mines.length > 12) st.mines.shift();
-        s.event('mine', { x: rnd(m.x), y: rnd(m.y), id: m.id });
-      },
+      onHit(s, p) { placeMine(s, p.x); },
     });
   },
 
@@ -675,6 +688,161 @@ export const BEHAVIORS = {
     });
   },
 };
+
+function homingShot(sim, P, angle, power) {
+  sim.fire(angle, power, {
+    ...shellOpts(P),
+    onApex(s, p) { p.target = s.nearestEnemy(p.x, p.y); },
+    onStep(s, p) {
+      if (p.target == null || p.target < 0) return;
+      const tk = s.s.tanks[p.target];
+      if (!tk.alive) return;
+      const want = Math.atan2(tk.y - 9 - p.y, tk.x - p.x);
+      const cur = Math.atan2(p.vy, p.vx);
+      let diff = want - cur;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      const turn = Math.max(-P.turn * DEG, Math.min(P.turn * DEG, diff));
+      const sp = Math.hypot(p.vx, p.vy);
+      p.vx = Math.cos(cur + turn) * sp;
+      p.vy = Math.sin(cur + turn) * sp;
+    },
+  });
+}
+
+function placeMine(s, px) {
+  const st = s.s;
+  const x = Math.max(4, Math.min(WORLD_W - 4, px));
+  const m = { id: st.nextMine++, x, y: groundAt(st.terrain, x), owner: s.shooter, armed: false };
+  st.mines.push(m);
+  if (st.mines.length > 12) st.mines.shift();
+  s.event('mine', { x: rnd(m.x), y: rnd(m.y), id: m.id });
+}
+
+Object.assign(BEHAVIORS, {
+  // Explosion that throws tanks away from the impact.
+  repulse(sim, P, c) {
+    sim.fire(c.angle, c.power, {
+      style: P.style, r: P.r, dmg: P.dmg,
+      onHit(s, p, hit) {
+        const x0 = p.x, y0 = p.y;
+        s.explode(x0, y0, P.r, P.dmg, { direct: hit.tank, kind: 'blackhole' });
+        s.event('repulse', { x: rnd(x0), y: rnd(y0), r: P.range });
+        const plan = [];
+        s.s.tanks.forEach((tk, i) => {
+          const d = Math.hypot(tk.x - x0, tk.y - 9 - y0);
+          if (tk.alive && !tk.flying && d < P.range) plan.push({ i, step: ((tk.x >= x0 ? 1 : -1) * P.push * (1 - d / P.range)) / 40 });
+        });
+        s.add({ kind: 'push', hidden: true, x: x0, y: y0, update(ss, e) {
+          for (const q of plan) if (ss.s.tanks[q.i].alive) ss.shove(q.i, q.step);
+          if (e.age >= 40) e.dead = true;
+        } });
+      },
+    });
+  },
+
+  // A marker shell; after a short delay an orbital beam hits straight down.
+  skylance(sim, P, c) {
+    sim.fire(c.angle, c.power, {
+      style: P.style,
+      onHit(s, p) {
+        const x0 = p.x;
+        s.event('skylanceMark', { x: rnd(x0), y: rnd(p.y) });
+        s.after(sec(P.delay), (ss) => {
+          const g = groundAt(ss.s.terrain, x0);
+          for (let y = g - 4; y <= g + 46; y += 6) ss.carve(x0, y, P.width / 2);
+          ss.event('laser', { x1: rnd(x0), y1: -60, x2: rnd(x0), y2: rnd(g + 40), kind: 'skylance' });
+          ss.terrainOp(null);
+          ss.s.tanks.forEach((tk, i) => {
+            if (tk.alive && !tk.flying && Math.abs(tk.x - x0) < 18 + P.width / 2) ss.hurt(i, P.dmg, { direct: i, kind: 'laser' });
+          });
+        });
+      },
+    });
+  },
+
+  minefield(sim, P, c) {
+    sim.fire(c.angle, c.power, {
+      style: P.style,
+      onHit(s, p) {
+        for (let k = 0; k < P.n; k++) placeMine(s, p.x + (k - (P.n - 1) / 2) * P.spread);
+      },
+    });
+  },
+
+  // A twister that runs along the ground and launches every tank it touches (once).
+  tornado(sim, P, c) {
+    sim.fire(c.angle, c.power, {
+      style: P.style,
+      onHit(s, p) {
+        const dir = p.vx < 0 ? -1 : 1;
+        s.event('tornado', { x: rnd(p.x), dir });
+        const tossed = new Set();
+        s.add({ kind: 'tornado', style: 'tornado', x: p.x, y: groundAt(s.s.terrain, p.x) - 30, update(ss, e) {
+          e.x += dir * P.speed * DT;
+          e.y = groundAt(ss.s.terrain, e.x) - 30;
+          if (e.age % 12 === 0) { ss.carve(e.x, e.y + 30, 7); ss.terrainOp(null); }
+          ss.s.tanks.forEach((tk, i) => {
+            if (tossed.has(i) || !tk.alive || tk.flying || Math.abs(tk.x - e.x) > 26) return;
+            tossed.add(i);
+            ss.hurt(i, P.dmg, { kind: 'tornado' });
+            if (tk.alive) launchTank(ss, i, dir * 70, -P.lift);
+          });
+          if (e.age >= sec(P.life) || e.x < 0 || e.x > WORLD_W) e.dead = true;
+        } });
+      },
+    });
+  },
+
+  // Not fired: walls on both sides of the shooter.
+  fortress(sim, P) {
+    const tk = sim.tank;
+    for (const side of [-1, 1]) {
+      const cx = tk.x + side * P.gap;
+      const base = groundAt(sim.s.terrain, cx);
+      sim.event('dirt', { x: rnd(cx), y: rnd(base), r: P.w });
+      sim.terrainOp(buildTo(sim.s.terrain, cx - P.w / 2, cx + P.w / 2, (x) => base - P.h * (1 - Math.abs(x - cx) / (P.w * 1.5))));
+    }
+  },
+
+  // Splits at the apex; each piece splits again a moment later.
+  hydra(sim, P, c) {
+    const child = (s, x, y, vx, vy, gen) => s.shell({
+      ...shellOpts(P), style: P.style, x, y, vx, vy, safe: false,
+      onStep: gen < 2 ? (ss, q) => {
+        if (q.age !== 24) return;
+        q.dead = true;
+        ss.event('split', { x: rnd(q.x), y: rnd(q.y) });
+        for (let k = 0; k < P.n; k++) child(ss, q.x, q.y, q.vx + (k - (P.n - 1) / 2) * 60, q.vy - 30, gen + 1);
+      } : undefined,
+    });
+    sim.fire(c.angle, c.power, {
+      ...shellOpts(P),
+      onApex(s, p) {
+        p.dead = true;
+        s.event('split', { x: rnd(p.x), y: rnd(p.y) });
+        for (let k = 0; k < P.n; k++) child(s, p.x, p.y, p.vx + (k - (P.n - 1) / 2) * 80, p.vy, 1);
+      },
+    });
+  },
+
+  // Flat-bottomed trench dug at the impact.
+  trench(sim, P, c) {
+    sim.fire(c.angle, c.power, {
+      style: P.style,
+      onHit(s, p, hit) {
+        const x0 = p.x, t = s.s.terrain;
+        const floor = groundAt(t, x0) + P.depth;
+        s.explode(x0, p.y, P.r, P.dmg, { direct: hit.tank, kind: 'digger', carve: false });
+        s.event('dirt', { x: rnd(x0), y: rnd(p.y), r: P.width });
+        s.terrainOp(raise(t, x0 - P.width, x0 + P.width, (x) => {
+          const edge = Math.min(1, (P.width - Math.abs(x - x0)) / 20);
+          const target = t[x] + (floor - t[x]) * Math.max(0, edge);
+          return target > t[x] ? -(target - t[x]) : 0;
+        }));
+      },
+    });
+  },
+});
 
 function updateRoller(sim, e) {
   const t = sim.s.terrain, P = e.P;
