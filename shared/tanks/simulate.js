@@ -18,7 +18,7 @@ export const FRAME_STRIDE = 4; // frame.p holds [style, x, y, heading] per proje
 
 // ---------- state ----------
 export function makeTank({ id, team, x, terrain }) {
-  const t = { id, team, x, y: 0, tilt: 0, hp: TANK_HP, score: 0, alive: true, shield: 0, shieldTurns: 0, frozen: 0, angle: 60, power: 60 };
+  const t = { id, team, x, y: 0, tilt: 0, hp: TANK_HP, score: 0, alive: true, shield: 0, shieldTurns: 0, frozen: 0, buried: 0, angle: 60, power: 60 };
   settleTank(terrain, t);
   return t;
 }
@@ -35,7 +35,7 @@ export function cloneState(s) {
 export function hashState(s) {
   const ints = Array.from(s.terrain, toInt);
   for (const t of s.tanks) {
-    ints.push(toInt(t.x), toInt(t.y), t.hp, t.score, t.alive ? 1 : 0, t.shield, t.shieldTurns, t.frozen);
+    ints.push(toInt(t.x), toInt(t.y), t.hp, t.score, t.alive ? 1 : 0, t.shield, t.shieldTurns, t.frozen, toInt(t.buried || 0));
   }
   for (const m of s.mines) ints.push(m.id, toInt(m.x), toInt(m.y), m.owner, m.armed ? 1 : 0);
   return hashInts(ints);
@@ -70,7 +70,7 @@ export class Sim {
     this.dirty = null;
     this.g = gravityOf(state);
     this.wind = windAccel(state);
-    this.summary = { dealt: 0, points: 0, self: 0, hits: 0, terrain: 0, healed: 0, direct: false };
+    this.summary = { dealt: 0, points: 0, self: 0, hits: 0, terrain: 0, healed: 0, direct: false, lost: state.tanks.map(() => 0) };
     this.pointsMult = 1; // set from the fired weapon
   }
 
@@ -142,9 +142,10 @@ export class Sim {
     return s;
   }
 
-  terrainOp(range) {
+  // bury = dirt landing from above: tanks under it get buried instead of lifted.
+  terrainOp(range, bury = false) {
     if (range) this.markDirty(range);
-    this.settleAll();
+    this.settleAll(bury);
   }
 
   markDirty(range) { this.dirty = mergeRange(this.dirty, range); }
@@ -172,6 +173,10 @@ export class Sim {
     if (amt <= 0) return 0;
     if (s.mode === 'survival') tk.hp -= amt;
     const shooter = s.tanks[this.shooter];
+    // the tank that was hit loses the points its attacker scores (teammates: the raw damage)
+    const loss = mate ? amt : Math.round(amt * this.pointsMult);
+    tk.score -= loss;
+    this.summary.lost[i] += loss;
     if (mate) {
       shooter.score -= amt;
       this.summary.self += amt;
@@ -193,7 +198,7 @@ export class Sim {
         }
       }
     }
-    this.event('damage', { tank: i, amount: amt, points: mate ? -amt : Math.round(amt * this.pointsMult), by: this.shooter, x: rnd(tk.x), y: rnd(tk.y - 30), direct: o.direct === i, kind: o.kind || '' });
+    this.event('damage', { tank: i, amount: amt, points: mate ? -amt : Math.round(amt * this.pointsMult), lost: loss, by: this.shooter, x: rnd(tk.x), y: rnd(tk.y - 30), direct: o.direct === i, kind: o.kind || '' });
     if (s.mode === 'survival' && tk.hp <= 0) {
       tk.alive = false;
       tk.shield = 0;
@@ -205,7 +210,7 @@ export class Sim {
   }
 
   // Smooth deformed terrain, then drop tanks and mines onto it (with fall damage).
-  settleAll() {
+  settleAll(bury = false) {
     const s = this.s;
     if (this.dirty) {
       settle(s.terrain, this.dirty);
@@ -217,7 +222,7 @@ export class Sim {
     }
     s.tanks.forEach((tk, i) => {
       if (tk.flying) return;
-      const fell = settleTank(s.terrain, tk);
+      const fell = settleTank(s.terrain, tk, bury);
       const dmg = fallDamage(fell);
       if (dmg > 0) {
         this.event('fall', { tank: i, height: Math.round(fell) });

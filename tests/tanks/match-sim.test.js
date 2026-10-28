@@ -59,7 +59,7 @@ for (const mode of ['classic', 'survival']) {
       }
       // scores add up to the recorded damage
       m.stats.forEach((st, i) => {
-        assert.equal(s.tanks[i].score, st.points - st.self + st.healed, `player ${i} score = points - teammate damage + leech`);
+        assert.equal(s.tanks[i].score, st.points - st.self + st.healed - st.lost, `player ${i} score = points - teammate damage + leech - points lost when hit`);
       });
       for (const t of s.tanks) for (const k of ['x', 'y', 'hp', 'score']) assert.ok(Number.isFinite(t[k]), `${k} is a number`);
       assert.ok(s.terrain.every(Number.isFinite));
@@ -109,7 +109,7 @@ for (const mode of ['classic', 'survival']) {
     assert.equal(m.phase, 'over');
     if (mode === 'classic') assert.ok(m.shotsLeft.every((n) => n === 0), 'everyone fired all 30 shots');
     else assert.ok(m.aliveTeams().size <= 1 || m.shotsLeft.every((n, i) => n === 0 || !s.tanks[i].alive));
-    m.stats.forEach((st, i) => assert.equal(s.tanks[i].score, st.points - st.self + st.healed));
+    m.stats.forEach((st, i) => assert.equal(s.tanks[i].score, st.points - st.self + st.healed - st.lost));
     for (const t of s.tanks) assert.ok(Number.isFinite(t.x) && Number.isFinite(t.y));
     assert.ok(m.winner.winners.length >= 1);
   });
@@ -144,4 +144,16 @@ test('Free Fire: no turns, frozen tanks thaw after their next shot, own mines bl
   const r2 = m.fireFree(1, { slot, angle: 45, power: 40 });
   assert.equal(r2.pre.length, 1, "the shooter's mine went off before the shot");
   assert.equal(m.fire(0, { slot, angle: 45, power: 40 }).error, 'Free Fire match: use fireFree');
+});
+
+test('Free Fire: a tank that has used all its shots can still move', () => {
+  const m = new Match(PLAYERS(2), { ...DEFAULT_SETTINGS, map: 'hills', pace: 'free', arsenal: 'unlimited', weapons: 5 }, 9);
+  m.shotsLeft[0] = 0;
+  assert.ok(!m.canControl(0), 'no more shots');
+  const x0 = m.state.tanks[0].x;
+  const r = m.move(0, x0 < 800 ? 1 : -1);
+  assert.ok(r.ok, r.error);
+  assert.notEqual(m.state.tanks[0].x, x0);
+  m.state.tanks[1].alive = false;
+  assert.equal(m.move(1, 1).error, 'Not your turn', 'destroyed tanks cannot move');
 });

@@ -37,7 +37,8 @@ for (const w of WEAPONS) {
       for (const tk of a.state.tanks) {
         assert.ok(Number.isFinite(tk.x) && Number.isFinite(tk.y) && Number.isFinite(tk.hp) && Number.isFinite(tk.score));
         assert.ok(tk.x >= 0 && tk.x <= WORLD_W && tk.y <= GROUND_MAX, 'tank inside the map');
-        assert.ok(tk.y <= surfaceY(t, tk.x) + 0.01, `tank not inside terrain (${tk.y} vs ${surfaceY(t, tk.x)})`);
+        if (tk.buried > 0) assert.ok(tk.y > surfaceY(t, tk.x), 'a buried tank really is under the dirt');
+        else assert.ok(tk.y <= surfaceY(t, tk.x) + 0.01, `tank not inside terrain (${tk.y} vs ${surfaceY(t, tk.x)})`);
         assert.ok(tk.hp >= 0 && tk.hp <= 100);
       }
       // the input state is never mutated

@@ -389,6 +389,8 @@ export class Renderer {
     ctx.setTransform(dpr * T.s, 0, 0, dpr * T.s, dpr * T.tx, dpr * T.ty);
     const view = { l: -T.tx / T.s, t: -T.ty / T.s, r: (this.cw - T.tx) / T.s, b: (this.ch - T.ty) / T.s };
     this.drawAmbientBack(ctx, scene.time);
+    // buried tanks are drawn under the dirt, then as a faint outline on top of it
+    for (const t of scene.tanks) if (t.buried) drawTank(ctx, t, scene.time);
     ctx.drawImage(this.terrainCanvas, 0, 0, WORLD_W, WORLD_H);
     if (this.portrait) { ctx.fillStyle = this.map.ground[2]; ctx.fillRect(-WORLD_W, WORLD_H - 1, WORLD_W * 3, WORLD_H * 2); }
     // tracers
@@ -412,7 +414,12 @@ export class Renderer {
       if (m.armed) { ctx.globalAlpha = 0.12; ctx.fillStyle = '#ff3b3b'; ctx.beginPath(); ctx.arc(m.x, m.y - 4, 14 + Math.sin(scene.time * 8) * 3, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
     }
     fx.drawBack(ctx, view);
-    for (const t of scene.tanks) drawTank(ctx, t, scene.time);
+    for (const t of scene.tanks) {
+      if (!t.buried) { drawTank(ctx, t, scene.time); continue; }
+      ctx.globalAlpha = 0.32;
+      drawTank(ctx, t, scene.time);
+      ctx.globalAlpha = 1;
+    }
     if (scene.aim) this.drawAim(ctx, scene.aim);
     this.drawProjectiles(ctx, scene, view);
     fx.drawFront(ctx, view);
@@ -615,7 +622,7 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.font = '600 13px system-ui, sans-serif';
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.7)';
-    const label = t.name + (t.bot ? ' · BOT' : '') + (t.offline ? ' · ⚠' : '');
+    const label = t.name + (t.bot ? ' · BOT' : '') + (t.offline ? ' · ⚠' : '') + (t.buried && t.alive ? ' · ⛏ BURIED' : '');
     ctx.strokeText(label, t.x, y - (scene.survival ? 8 : 0));
     ctx.fillStyle = t.alive ? '#fff' : '#999';
     ctx.fillText(label, t.x, y - (scene.survival ? 8 : 0));

@@ -307,3 +307,38 @@ test('finalizeState keeps tanks on the surface', () => {
   assert.equal(st.tanks[0].x, 200.12);
   assert.equal(st.tanks[0].y, 600);
 });
+
+test('getting hit costs the victim the points the attacker scores', () => {
+  const st = flatState([200, 800]);
+  sim(st).explode(800, 590, 30, 40, { carve: false, direct: 1 });
+  assert.equal(st.tanks[0].score, 50);
+  assert.equal(st.tanks[1].score, -50);
+  // a Nuke hit: 3x points for the shooter, 3x loss for the victim
+  const n = flatState([200, 260], { mode: 'survival' });
+  const r = simulateShot(n, { shooter: 0, weapon: 'nuke', angle: 0, power: 8 }, 1);
+  assert.ok(r.state.tanks[0].score > 0);
+  assert.equal(r.state.tanks[1].score, -r.state.tanks[0].score);
+});
+
+test('dirt buries a tank; it cannot drive until the dirt above it is blown away', () => {
+  const st = flatState([200, 800]);
+  const s = sim(st);
+  s.terrainOp(addCircle(st.terrain, 800, 540, 60), true);
+  const tk = st.tanks[1];
+  assert.equal(tk.y, 600, 'the tank stays where it was');
+  assert.ok(tk.buried > 40, `buried under ${tk.buried} px of dirt`);
+  // a later explosion elsewhere doesn't pop it out
+  s.explode(200, 590, 20, 0, {});
+  assert.ok(tk.buried > 40);
+  // blasting the dirt above frees it
+  s.carve(800, 560, 70);
+  s.settleAll();
+  assert.equal(tk.buried, 0);
+  // the Dirt Ball weapon buries what it lands on; a buried tank can't move
+  const m = new Match(PLAYERS(2), { ...DEFAULT_SETTINGS, map: 'hills' }, 4);
+  while (m.phase === 'draft') m.autoPick();
+  m.beginTurn();
+  const p = m.turn.player;
+  m.state.tanks[p].buried = 30;
+  assert.equal(m.move(p, 1).error, 'Buried! Shoot your way out first');
+});

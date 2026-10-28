@@ -553,6 +553,13 @@ function actor() {
   return myTurn() && !busy() ? G.turn.player : -1;
 }
 const frozenNow = (p) => (isFree() ? G.st.tanks[p]?.frozen > 0 : !!G.turn?.frozen);
+// Seat the local player may drive: the actor, or (Free Fire) your living tank after its shots are used up.
+function mover() {
+  const a = actor();
+  if (a >= 0 || !isFree() || !G.free || G.room?.phase !== 'match') return a;
+  const p = mySeat();
+  return p >= 0 && G.st?.tanks[p]?.alive ? p : -1;
+}
 
 function startFreeUi(msg) {
   G.free = { reload: msg.reload };
@@ -630,13 +637,19 @@ function renderHud() {
     : G.turn ? `Round ${G.turn.round}/${G.match.settings.weapons}` : '';
   const me = actor();
   const mine = me >= 0;
-  $('hud-bottom').classList.toggle('off', !mine);
+  const moveOnly = !mine && mover() >= 0; // out of shots in Free Fire: only the move buttons
+  $('hud-bottom').classList.toggle('off', !mine && !moveOnly);
+  $('hud-bottom').classList.toggle('move-only', moveOnly);
+  if (moveOnly) {
+    const canMove = !frozenNow(mover()) && !(G.st.tanks[mover()].buried > 0);
+    $('move-left').disabled = !canMove;
+    $('move-right').disabled = !canMove;
+  }
   $('aim-hint').hidden = !mine || prefs.aimMode !== 'sling' || G.slingUsed;
   if (!mine) $('weapon-list').hidden = true;
   if (mine) {
     const tank = G.st.tanks[me];
-    const canMove = !frozenNow(me);
-    void tank;
+    const canMove = !frozenNow(me) && !(tank.buried > 0);
     $('move-left').disabled = !canMove;
     $('move-right').disabled = !canMove;
     $('power').max = frozenNow(me) ? FROZEN_POWER_CAP : 100;
@@ -749,7 +762,7 @@ async function fire() {
 
 // Moving is free and unlimited: one 60 px step per press, hold to keep driving.
 async function move(dir) {
-  const me = actor();
+  const me = mover();
   if (me < 0 || G.movePending || G.moves.some((m) => m.p === me)) return;
   G.movePending = true;
   setTimeout(() => { G.movePending = false; }, 250);
@@ -1008,7 +1021,10 @@ function serverEvent(P, e) {
     const enemy = e.tank !== P.shooter && G.st.tanks[e.tank].team !== G.st.tanks[P.shooter].team;
     const pts = e.points ?? e.amount;
     fx.number(e.x, e.y, `${enemy ? '+' : '-'}${enemy ? pts : e.amount}`, enemy ? shooter.color : '#ff5d5d', pts >= 40);
-    if (enemy) P.hits.set(e.tank, (P.hits.get(e.tank) || 0) + pts);
+    if (enemy) {
+      P.hits.set(e.tank, (P.hits.get(e.tank) || 0) + pts);
+      fx.number(e.x + 26, e.y + 22, `-${e.lost ?? pts}`, '#ff5d5d'); // the victim loses those points
+    }
     if (G.st.mode === 'survival' && !isFree()) G.st.tanks[e.tank].hp = Math.max(0, G.st.tanks[e.tank].hp - e.amount);
   } else if (e.type === 'heal') {
     const v = G.vt[e.tank];
@@ -1368,7 +1384,12 @@ const input = createInput(canvas, {
     if (action === 'mute') { $('mute').checked = audio.toggleMute(); showToast(audio.muted ? 'Sound off' : 'Sound on'); return; }
     if (action === 'menu') { if (G.screen === 'game') $('menu').hidden = !$('menu').hidden; return; }
     if (G.screen === 'draft' && !repeat) return draftNav(action);
-    if (G.screen !== 'game' || actor() < 0) return false;
+    if (G.screen !== 'game') return false;
+    if (actor() < 0) {
+      // out of shots in Free Fire: you can still drive
+      if (mover() >= 0 && (action === 'moveLeft' || action === 'moveRight')) { move(action === 'moveLeft' ? -1 : 1); return true; }
+      return false;
+    }
     if (!$('weapon-list').hidden && (action === 'fire' || !['moveLeft', 'moveRight'].includes(action))) {
       if (action === 'openWeapons') { $('weapon-list').hidden = true; return true; }
       return listNav(action);
@@ -1495,7 +1516,7 @@ function buildScene() {
     const t = st.tanks[i], v = G.vt[i], seat = seatOf(p.id);
     return {
       x: v.x, y: v.y, tilt: v.tilt, angle: v.angle, recoil: v.recoil, wheel: v.wheel, color: p.color, style: p.style, name: p.name,
-      hp: t.hp, shield: t.shield, frozen: t.frozen, alive: t.alive, bot: !!seat?.isBot, offline: seat && !seat.connected,
+      hp: t.hp, shield: t.shield, frozen: t.frozen, buried: t.buried > 0, alive: t.alive, bot: !!seat?.isBot, offline: seat && !seat.connected,
       active: isFree() ? i === actor() : !!G.turn && !G.turn.fired && G.turn.player === i && !busy(), bubble: G.bubbles.get(i),
     };
   });

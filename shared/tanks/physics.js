@@ -56,13 +56,20 @@ export function distToTank(tank, x, y) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-// Rest the tank on the terrain; returns how far it fell (0 if it was pushed up).
-export function settleTank(terrain, tank) {
+// Rest the tank on the terrain; returns how far it fell.
+// Dirt piled on top (bury = true, or a tank already buried) leaves the tank where it is, under the dirt;
+// otherwise rising ground lifts it. Once the dirt above is blown away it rests on the surface again.
+export function settleTank(terrain, tank, bury = false) {
   tank.x = Math.min(WORLD_W - EDGE_MARGIN, Math.max(EDGE_MARGIN, tank.x));
   const y = Math.min(GROUND_MAX, surfaceY(terrain, tank.x));
+  tank.tilt = Math.max(-TANK_MAX_TILT, Math.min(TANK_MAX_TILT, slopeAt(terrain, tank.x)));
+  if (y < tank.y - 0.5 && (bury || tank.buried > 0)) {
+    tank.buried = Math.round((tank.y - y) * 100) / 100; // depth of dirt above the tank
+    return 0;
+  }
   const fell = y - tank.y;
   tank.y = y;
-  tank.tilt = Math.max(-TANK_MAX_TILT, Math.min(TANK_MAX_TILT, slopeAt(terrain, tank.x)));
+  tank.buried = 0;
   return fell > 0 ? fell : 0;
 }
 

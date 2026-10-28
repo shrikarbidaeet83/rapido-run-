@@ -51,7 +51,7 @@ export class Match {
     this.phase = 'draft';
     const n = this.players.length;
     this.shotsLeft = this.players.map(() => settings.weapons);
-    this.stats = this.players.map(() => ({ damage: 0, points: 0, self: 0, healed: 0, shots: 0, offensive: 0, hits: 0, terrain: 0, best: null }));
+    this.stats = this.players.map(() => ({ damage: 0, points: 0, lost: 0, self: 0, healed: 0, shots: 0, offensive: 0, hits: 0, terrain: 0, best: null }));
     this.state = null;
     this.turn = null;
     this.turnNo = 0;
@@ -137,6 +137,12 @@ export class Match {
     return this.free ? this.canPlay(player) : this.isActive(player);
   }
 
+  // Free Fire: a living tank can keep driving after its shots are used up.
+  canMove(player) {
+    if (this.phase !== 'play') return false;
+    return this.free ? this.state.tanks[player]?.alive : this.isActive(player);
+  }
+
   // Next turn. Detonates the player's own mines first (they can change the outcome).
   // Returns { done } or { player, mineShots }.
   beginTurn() {
@@ -176,9 +182,10 @@ export class Match {
   }
 
   move(player, dir) {
-    if (!this.canControl(player)) return { error: 'Not your turn' };
+    if (!this.canMove(player)) return { error: 'Not your turn' };
     const tank = this.state.tanks[player];
     if (this.free ? tank.frozen > 0 : this.turn.frozen) return { error: 'Frozen' };
+    if (tank.buried > 0) return { error: 'Buried! Shoot your way out first' };
     if (dir !== -1 && dir !== 1) return { error: 'Bad direction' };
     const dist = Math.round(MOVE_DISTANCE * getMap(this.state.map).moveMult);
     const path = planMove(this.state, player, dir, dist);
@@ -275,6 +282,7 @@ export class Match {
     const sum = res.summary;
     st.damage += sum.dealt;
     st.points += sum.points;
+    sum.lost.forEach((n, i) => { this.stats[i].lost += n; });
     st.self += sum.self;
     st.terrain += sum.terrain;
     if (this.state.mode === 'classic') st.healed += sum.healed;

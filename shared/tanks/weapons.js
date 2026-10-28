@@ -165,6 +165,7 @@ function reviveOnGround(sim, p) {
 function launchTank(sim, i, vx, vy) {
   const tk = sim.s.tanks[i];
   tk.flying = true;
+  tk.buried = 0;
   sim.add({ kind: 'flyer', hidden: true, i, vx, vy, top: tk.y, update: updateFlyer });
 }
 
@@ -231,7 +232,7 @@ export const BEHAVIORS = {
       style: P.style,
       onHit(s, p) {
         s.event('dirt', { x: rnd(p.x), y: rnd(p.y), r: P.r });
-        s.terrainOp(addCircle(s.s.terrain, p.x, p.y - P.r * 0.4, P.r));
+        s.terrainOp(addCircle(s.s.terrain, p.x, p.y - P.r * 0.4, P.r), true);
       },
     });
   },
@@ -244,7 +245,7 @@ export const BEHAVIORS = {
         s.terrainOp(raise(s.s.terrain, p.x - P.width, p.x + P.width, (x) => {
           const k = Math.cos(((x - p.x) / P.width) * (Math.PI / 2));
           return P.h * k * k;
-        }));
+        }), true);
       },
     });
   },
@@ -606,6 +607,7 @@ export const BEHAVIORS = {
         }
         const from = { x: rnd(tk.x), y: rnd(tk.y) };
         tk.x = x;
+        tk.buried = 0;
         settleTank(s.s.terrain, tk);
         s.event('teleport', { tank: s.shooter, from, to: { x: rnd(tk.x), y: rnd(tk.y) } });
       },
@@ -669,7 +671,7 @@ export const BEHAVIORS = {
       onHit(s, p) {
         const base = groundAt(s.s.terrain, p.x);
         s.event('dirt', { x: rnd(p.x), y: rnd(base), r: P.w });
-        s.terrainOp(buildTo(s.s.terrain, p.x - P.w / 2, p.x + P.w / 2, () => base - P.h));
+        s.terrainOp(buildTo(s.s.terrain, p.x - P.w / 2, p.x + P.w / 2, () => base - P.h), true);
       },
     });
   },
