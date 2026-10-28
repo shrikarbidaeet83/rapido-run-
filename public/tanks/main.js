@@ -1023,7 +1023,7 @@ function serverEvent(P, e) {
     fx.number(e.x, e.y, `${enemy ? '+' : '-'}${enemy ? pts : e.amount}`, enemy ? shooter.color : '#ff5d5d', pts >= 40);
     if (enemy) {
       P.hits.set(e.tank, (P.hits.get(e.tank) || 0) + pts);
-      fx.number(e.x + 26, e.y + 22, `-${e.lost ?? pts}`, '#ff5d5d'); // the victim loses those points
+      if (e.lost > 0) fx.number(e.x + 26, e.y + 22, `-${e.lost}`, '#ff5d5d'); // the victim loses a share of them
     }
     if (G.st.mode === 'survival' && !isFree()) G.st.tanks[e.tank].hp = Math.max(0, G.st.tanks[e.tank].hp - e.amount);
   } else if (e.type === 'heal') {

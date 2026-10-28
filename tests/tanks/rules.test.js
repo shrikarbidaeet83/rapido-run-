@@ -7,7 +7,7 @@ import { fallDamage, planMove } from '../../shared/tanks/physics.js';
 import { generateTerrain, MAP_IDS } from '../../shared/tanks/maps.js';
 import { Match, snakeOrder, drawPool } from '../../server/tanks/game.js';
 import { mulberry32 } from '../../shared/tanks/rng.js';
-import { DEFAULT_SETTINGS, SPAWN_MIN_GAP, GROUND_MAX, GROUND_MIN } from '../../shared/tanks/constants.js';
+import { DEFAULT_SETTINGS, SPAWN_MIN_GAP, GROUND_MAX, GROUND_MIN, HIT_POINT_LOSS } from '../../shared/tanks/constants.js';
 import { flatState, PLAYERS } from './helpers.js';
 
 const sim = (st, shooter = 0) => new Sim(st, 1, shooter, false);
@@ -51,8 +51,11 @@ test('the attacker is immune to its own attack (blast, fall, mine)', () => {
 
 test('friendly fire: teammates cost points when on, are immune when off', () => {
   const on = flatState([200, 600, 1000], { teams: [0, 0, 1] });
+  on.tanks[0].score = 50;
   sim(on).explode(600, 590, 30, 30, { carve: false });
-  assert.equal(on.tanks[0].score, -30);
+  assert.equal(on.tanks[0].score, 20);
+  sim(on).explode(600, 590, 30, 30, { carve: false });
+  assert.equal(on.tanks[0].score, 0, 'but never below 0');
   const off = flatState([200, 600, 1000], { teams: [0, 0, 1], friendlyFire: false });
   sim(off).explode(600, 590, 30, 30, { carve: false });
   assert.equal(off.tanks[0].score, 0);
@@ -308,16 +311,23 @@ test('finalizeState keeps tanks on the surface', () => {
   assert.equal(st.tanks[0].y, 600);
 });
 
-test('getting hit costs the victim the points the attacker scores', () => {
+test('getting hit costs the victim a quarter of the points scored, never below 0', () => {
   const st = flatState([200, 800]);
+  st.tanks[1].score = 100;
   sim(st).explode(800, 590, 30, 40, { carve: false, direct: 1 });
   assert.equal(st.tanks[0].score, 50);
-  assert.equal(st.tanks[1].score, -50);
-  // a Nuke hit: 3x points for the shooter, 3x loss for the victim
+  assert.equal(st.tanks[1].score, 100 - Math.round(50 * HIT_POINT_LOSS));
+  // a victim with no points stays at 0
+  const z = flatState([200, 800]);
+  sim(z).explode(800, 590, 30, 40, { carve: false, direct: 1 });
+  assert.equal(z.tanks[0].score, 50);
+  assert.equal(z.tanks[1].score, 0);
+  // a Nuke hit: 3x points for the shooter; the victim (2 points) only drops to 0
   const n = flatState([200, 260], { mode: 'survival' });
+  n.tanks[1].score = 2;
   const r = simulateShot(n, { shooter: 0, weapon: 'nuke', angle: 0, power: 8 }, 1);
   assert.ok(r.state.tanks[0].score > 0);
-  assert.equal(r.state.tanks[1].score, -r.state.tanks[0].score);
+  assert.equal(r.state.tanks[1].score, 0);
 });
 
 test('dirt buries a tank; it cannot drive until the dirt above it is blown away', () => {

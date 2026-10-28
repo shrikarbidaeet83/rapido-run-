@@ -5,6 +5,7 @@
 import {
   WORLD_W, GROUND_MAX, DT, STEP_RATE, MAX_STEPS, MAX_PROJECTILES, MAX_EXPLOSIONS, DIRECT_HIT_BONUS,
   SELF_SAFE_SECONDS, SUBSTEP_PX, SHELL_MAX_SECONDS, MAX_WALL_HITS, TANK_HP, MINE_RADIUS, MINE_DAMAGE, FROZEN_POWER_CAP,
+  HIT_POINT_LOSS,
 } from './constants.js';
 import { mulberry32, hashInts } from './rng.js';
 import { groundAt, surfaceY, carveCircle, settle, mergeRange, quantize, toInt } from './terrain.js';
@@ -173,13 +174,14 @@ export class Sim {
     if (amt <= 0) return 0;
     if (s.mode === 'survival') tk.hp -= amt;
     const shooter = s.tanks[this.shooter];
-    // the tank that was hit loses the points its attacker scores (teammates: the raw damage)
-    const loss = mate ? amt : Math.round(amt * this.pointsMult);
+    // the tank that was hit loses a share of the points scored on it, but never drops below 0
+    const loss = Math.max(0, Math.min(tk.score, Math.round((mate ? amt : amt * this.pointsMult) * HIT_POINT_LOSS)));
     tk.score -= loss;
     this.summary.lost[i] += loss;
     if (mate) {
-      shooter.score -= amt;
-      this.summary.self += amt;
+      const pen = Math.max(0, Math.min(shooter.score, amt)); // friendly fire can't push the shooter below 0 either
+      shooter.score -= pen;
+      this.summary.self += pen;
     } else {
       const pts = Math.round(amt * this.pointsMult);
       shooter.score += pts;

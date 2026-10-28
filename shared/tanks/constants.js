@@ -68,6 +68,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   public: false,
 });
 export const DRAFT_PICK_SECONDS = 15;
+export const HIT_POINT_LOSS = 0.25;       // a tank that's hit loses this share of the points scored on it (never below 0)
 export const FREE_RELOAD_MS = 2000;        // Free Fire: time between your shots
 export const FREE_SECONDS_PER_ROUND = 8;   // Free Fire match clock = rounds × this
 export const FREE_MIN_SECONDS = 90;

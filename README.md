@@ -34,7 +34,7 @@ A 2D side-view, turn-based artillery game in the style of Pocket Tanks, with ori
 - **Points follow weapon power:** each damage point scores × the weapon's multiplier: 1× for light weapons, 1.25×/1.5×/2× for power tiers 3/4/5, and **3× for Nuke and Black Hole**. Damage numbers show the points.
 - **Modes:** **Classic Score** (points from damage dealt; teammate damage with friendly fire on costs points; highest score wins) and **Survival** (100 HP; last tank or team alive wins; if the shots run out, highest HP wins).
 - **Falling:** when the ground under a tank is destroyed, the tank falls and takes `0.2 × height` damage (max 20).
-- **Getting hit costs points:** the tank that's hit loses the points its attacker scores (so a Nuke hit is +3× for the shooter and −3× for the victim).
+- **Getting hit costs points:** the tank that's hit loses a quarter of the points its attacker scores (a 40-point hit costs the victim 10). Scores never go below 0.
 - **Dirt buries tanks:** Dirt Ball, Dirt Slinger and Mega Wall bury a tank they land on. A buried tank can't drive and is safe from direct hits (blasts still reach it). Its next shot blows the dirt off, and it can't hurt itself.
 - **Your own attacks never hurt you:** blasts, burns, falls caused by your shot, and your own mines.
 - **Results:** winner celebration, a stats table (score/HP, damage, best shot, accuracy, self-damage), awards (Sharpshooter, Demolition Expert, Biggest Hit), the room's win leaderboard, and **Rematch**, **Back to Lobby** and **Share Result** (PNG image).
