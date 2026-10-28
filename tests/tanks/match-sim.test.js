@@ -59,7 +59,7 @@ for (const mode of ['classic', 'survival']) {
       }
       // scores add up to the recorded damage
       m.stats.forEach((st, i) => {
-        assert.equal(s.tanks[i].score, st.damage - st.self + st.healed, `player ${i} score = damage - self + leech`);
+        assert.equal(s.tanks[i].score, st.points - st.self + st.healed, `player ${i} score = points - teammate damage + leech`);
       });
       for (const t of s.tanks) for (const k of ['x', 'y', 'hp', 'score']) assert.ok(Number.isFinite(t[k]), `${k} is a number`);
       assert.ok(s.terrain.every(Number.isFinite));
@@ -109,7 +109,7 @@ for (const mode of ['classic', 'survival']) {
     assert.equal(m.phase, 'over');
     if (mode === 'classic') assert.ok(m.shotsLeft.every((n) => n === 0), 'everyone fired all 30 shots');
     else assert.ok(m.aliveTeams().size <= 1 || m.shotsLeft.every((n, i) => n === 0 || !s.tanks[i].alive));
-    m.stats.forEach((st, i) => assert.equal(s.tanks[i].score, st.damage - st.self + st.healed));
+    m.stats.forEach((st, i) => assert.equal(s.tanks[i].score, st.points - st.self + st.healed));
     for (const t of s.tanks) assert.ok(Number.isFinite(t.x) && Number.isFinite(t.y));
     assert.ok(m.winner.winners.length >= 1);
   });

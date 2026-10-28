@@ -124,6 +124,7 @@
       </div>
     </div>
     <div id="banner" class="banner"></div>
+    <div id="aim-hint" class="aim-hint" hidden>Slingshot: press anywhere, pull back, release to fire</div>
     <div id="toast" class="toast"></div>
     <div id="hud-bottom">
       <div id="weapon-card" class="weapon-card">
@@ -139,8 +140,9 @@
         <span class="ctrl-label">Power <b id="power-val">0</b></span>
         <div class="ctrl-row"><button class="icon-btn" data-step="power:-1">−</button><input id="power" type="range" min="0" max="100" step="0.1"><button class="icon-btn" data-step="power:1">+</button></div>
       </div>
+      <button id="aim-mode" class="aim-mode" type="button" title="Aiming: Manual (sliders, drag to point) or Sling (pull back and release to fire)"></button>
       <div class="ctrl moves">
-        <span class="ctrl-label">Moves <b id="moves-val">4</b></span>
+        <span class="ctrl-label">Move</span>
         <div class="ctrl-row"><button id="move-left" class="icon-btn">◀</button><button id="move-right" class="icon-btn">▶</button></div>
       </div>
       <button id="btn-fire" class="fire">FIRE</button>
@@ -163,7 +165,7 @@
         <label class="field">Screen shake
           <select id="shake"><option value="1">Full</option><option value="0.5">Reduced</option><option value="0">Off</option></select>
         </label>
-        <p class="hint">Keys: ←/→ angle · ↑/↓ power (Shift = fine) · Space fire · A/D move · Q/E weapon · M mute</p>
+        <p class="hint">Aim mode (HUD button or S): Manual = sliders and drag to point, then FIRE; Sling = pull back anywhere and release to fire. Keys: ←/→ angle · ↑/↓ power (Shift = fine) · Space fire · A/D move · Q/E weapon · M mute</p>
         <button id="btn-resume" class="primary">Resume</button>
         <button id="btn-quit" class="ghost">Leave match</button>
       </div>

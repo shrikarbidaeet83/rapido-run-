@@ -7,7 +7,7 @@ import { fallDamage, planMove } from '../../shared/tanks/physics.js';
 import { generateTerrain, MAP_IDS } from '../../shared/tanks/maps.js';
 import { Match, snakeOrder, drawPool } from '../../server/tanks/game.js';
 import { mulberry32 } from '../../shared/tanks/rng.js';
-import { DEFAULT_SETTINGS, MOVES_PER_MATCH, SPAWN_MIN_GAP, GROUND_MAX, GROUND_MIN } from '../../shared/tanks/constants.js';
+import { DEFAULT_SETTINGS, SPAWN_MIN_GAP, GROUND_MAX, GROUND_MIN } from '../../shared/tanks/constants.js';
 import { flatState, PLAYERS } from './helpers.js';
 
 const sim = (st, shooter = 0) => new Sim(st, 1, shooter, false);
@@ -174,7 +174,7 @@ function giveWeapon(m, p, weapon) {
   return item.slot;
 }
 
-test('moves: 4 per match, 60 px along the terrain, only on your turn', () => {
+test('moves: unlimited 60 px steps along the terrain, only on your turn', () => {
   const m = playMatch(2);
   const p = m.turn.player;
   const x0 = m.state.tanks[p].x;
@@ -183,9 +183,25 @@ test('moves: 4 per match, 60 px along the terrain, only on your turn', () => {
   const r = m.move(p, dir);
   assert.ok(r.ok);
   assert.ok(Math.abs(m.state.tanks[p].x - x0) <= 60 && Math.abs(m.state.tanks[p].x - x0) > 0);
-  for (let i = 1; i < MOVES_PER_MATCH; i++) m.move(p, i % 2 ? -dir : dir);
-  assert.equal(m.state.tanks[p].moves, 0);
-  assert.equal(m.move(p, dir).error, 'No moves left');
+  const errors = [];
+  for (let i = 0; i < 12; i++) { const r2 = m.move(p, i % 2 ? -dir : dir); if (r2.error) errors.push(r2.error); }
+  assert.ok(!errors.includes('No moves left'), 'no move limit');
+  assert.ok(errors.length <= 2, `most moves succeed (${errors.join(', ')})`);
+});
+
+test('points follow weapon power: Nuke and Black Hole score 3x, Single Shell 1x', async () => {
+  const { weaponPoints, getWeapon } = await import('../../shared/tanks/weapons.js');
+  assert.equal(weaponPoints(getWeapon('nuke')), 3);
+  assert.equal(weaponPoints(getWeapon('blackhole')), 3);
+  assert.equal(weaponPoints(getWeapon('single')), 1);
+  for (const id of ['mega', 'airstrike', 'hydra']) assert.ok(weaponPoints(getWeapon(id)) >= 1.5);
+  // a nuke landing right on an enemy scores 3x the HP it takes
+  const s2 = flatState([200, 260], { mode: 'survival' });
+  const r2 = simulateShot(s2, { shooter: 0, weapon: 'nuke', angle: 0, power: 8 }, 1);
+  const lost = 100 - r2.state.tanks[1].hp;
+  assert.ok(lost > 0);
+  assert.equal(r2.state.tanks[0].score, r2.events.filter((e) => e.type === 'damage' && e.tank === 1).reduce((a, e) => a + e.points, 0));
+  assert.ok(r2.state.tanks[0].score >= lost * 3 - 2);
 });
 
 test('moves stop at steep slopes and map edges', () => {

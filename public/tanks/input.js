@@ -4,7 +4,7 @@
 const KEYMAP = {
   ArrowLeft: 'angleUp', ArrowRight: 'angleDown', ArrowUp: 'powerUp', ArrowDown: 'powerDown',
   Space: 'fire', Enter: 'fire', NumpadEnter: 'fire', KeyA: 'moveLeft', KeyD: 'moveRight',
-  KeyQ: 'prevWeapon', KeyE: 'nextWeapon', KeyW: 'openWeapons', KeyM: 'mute', Escape: 'menu',
+  KeyQ: 'prevWeapon', KeyE: 'nextWeapon', KeyW: 'openWeapons', KeyS: 'aimMode', KeyM: 'mute', Escape: 'menu',
 };
 
 export function createInput(canvas, handlers) {

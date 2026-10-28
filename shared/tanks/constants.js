@@ -8,8 +8,10 @@ export const GROUND_MAX = WORLD_H - 6; // bedrock: terrain surface can never sin
 export const STEP_RATE = 120;          // projectile physics steps per second
 export const DT = 1 / STEP_RATE;
 export const SUBSTEP_PX = 4;           // max distance a projectile moves per collision check
-export const GRAVITY = 300;            // px/s²
-export const POWER_K = 7;              // launch speed (px/s) per power point
+// Game speed: shells fly SPEED× faster; gravity scales by SPEED² so every arc (and aim) stays the same.
+export const SPEED = 1.35;
+export const GRAVITY = 300 * SPEED * SPEED; // px/s²
+export const POWER_K = 7 * SPEED;          // launch speed (px/s) per power point
 export const WIND_FACTOR = 6;          // px/s² per wind point (the game has no wind: state.wind is always 0)
 
 // safety limits per shot
@@ -34,10 +36,9 @@ export const SELF_SAFE_SECONDS = 0.15; // a shell can't hit its own tank right a
 export const DIRECT_HIT_BONUS = 0.25;
 
 // moves
-export const MOVES_PER_MATCH = 4;
 export const MOVE_DISTANCE = 60;
 export const MOVE_MAX_SLOPE = Math.tan(60 * Math.PI / 180);
-export const MOVE_SPEED = 90;          // px/s, for the client animation
+export const MOVE_SPEED = 150;         // px/s, tank driving animation
 export const TANK_MIN_GAP = 30;        // tanks can't drive into each other
 export const EDGE_MARGIN = 20;         // tank center keeps this far from the map edges
 
@@ -52,7 +53,7 @@ export const MINE_TRIGGER = 60;
 // match setup
 export const MAX_PLAYERS = 4;
 export const MIN_PLAYERS = 2;
-export const WEAPON_COUNTS = [5, 10, 15, 30, 40, 50];   // rounds (shots per player)
+export const WEAPON_COUNTS = [5, 10, 15, 30, 40, 50, 100];   // rounds (shots per player)
 export const TURN_TIMES = [20, 30, 45, 0];     // seconds, 0 = off
 export const DEFAULT_SETTINGS = Object.freeze({
   mode: 'classic',          // 'classic' | 'survival'
@@ -67,7 +68,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   public: false,
 });
 export const DRAFT_PICK_SECONDS = 15;
-export const FREE_RELOAD_MS = 3000;        // Free Fire: time between your shots
+export const FREE_RELOAD_MS = 2000;        // Free Fire: time between your shots
 export const FREE_SECONDS_PER_ROUND = 8;   // Free Fire match clock = rounds × this
 export const FREE_MIN_SECONDS = 90;
 export const POOL_EXTRA = 5;               // pool size = weapons × players + 5
@@ -83,8 +84,8 @@ export const CHAT_PER_10S = 6;
 export const RATE_LIMIT_PER_SEC = 30;
 export const RECONNECT_SECONDS = 60;
 export const EMPTY_ROOM_MINUTES = 5;
-export const BOT_THINK_MS = [1000, 2000];
-export const SHOT_END_PAUSE_MS = 900;      // pause after the animation before the next turn
+export const BOT_THINK_MS = [500, 1100];
+export const SHOT_END_PAUSE_MS = 400;      // pause after the animation before the next turn
 export const EMOJIS = ['😂', '🔥', '💀', '👏', 'GG'];
 
 export const TANK_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#ecf0f1'];

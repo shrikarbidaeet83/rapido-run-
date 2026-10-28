@@ -136,7 +136,7 @@ export function planBotTurn(match, me, level = 'medium', rng = Math.random, { no
     const aim = searchAim(state, me, target, item.weapon, level, rng, seed);
     if (!best || aim.score > best.score) best = { ...aim, slot: item.slot };
   }
-  if (level === 'hard' && !noMove && best.score < 6 && tank.moves > 0 && !tank.frozen) {
+  if (level === 'hard' && !noMove && best.score < 6 && !tank.frozen) {
     return { move: state.tanks[target].x > tank.x ? 1 : -1 };
   }
   return jitter(best);

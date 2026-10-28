@@ -36,6 +36,9 @@ export function getMap(id) {
   return MAPS.find((m) => m.id === id) || MAPS[0];
 }
 
+// The ground sits this much higher than the generators' base shapes (more room above the HUD).
+const GROUND_LIFT = 70;
+
 // Spawn x for n tanks, spread across the map, at least SPAWN_MIN_GAP apart.
 export function spawnPoints(n, rng) {
   const margin = 140;
@@ -112,7 +115,7 @@ export function generateTerrain(mapId, seed, nTanks) {
   const rng = mulberry32(seed);
   const shape = GENERATORS[map.id](rng);
   const t = createTerrain();
-  for (let x = 0; x < WORLD_W; x++) t[x] = Math.min(820, Math.max(260, shape(x)));
+  for (let x = 0; x < WORLD_W; x++) t[x] = Math.min(820 - GROUND_LIFT, Math.max(220, shape(x) - GROUND_LIFT));
   if (map.id === 'moon') {
     const craters = rng.int(4, 7);
     for (let i = 0; i < craters; i++) {
@@ -131,7 +134,7 @@ function flatten(t, sx) {
   const pad = 24, blend = 30;
   let y = 0;
   for (let x = sx - pad; x <= sx + pad; x++) y += t[Math.round(x)];
-  y = Math.min(800, y / (pad * 2 + 1));
+  y = Math.min(800 - GROUND_LIFT, y / (pad * 2 + 1));
   for (let x = sx - pad - blend; x <= sx + pad + blend; x++) {
     if (x < 0 || x >= WORLD_W) continue;
     const d = Math.abs(x - sx);

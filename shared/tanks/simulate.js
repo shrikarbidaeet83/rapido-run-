@@ -11,7 +11,7 @@ import { groundAt, surfaceY, carveCircle, settle, mergeRange, quantize, toInt } 
 import {
   launchVelocity, muzzle, gravityOf, windAccel, ballistic, pointInTank, distToTank, settleTank, fallDamage, DEG,
 } from './physics.js';
-import { getWeapon, BEHAVIORS } from './weapons.js';
+import { getWeapon, BEHAVIORS, weaponPoints } from './weapons.js';
 
 export const FRAME_EVERY = 2; // recorded animation frames: 60 per second
 export const FRAME_STRIDE = 4; // frame.p holds [style, x, y, heading] per projectile
@@ -70,7 +70,8 @@ export class Sim {
     this.dirty = null;
     this.g = gravityOf(state);
     this.wind = windAccel(state);
-    this.summary = { dealt: 0, self: 0, hits: 0, terrain: 0, healed: 0, direct: false };
+    this.summary = { dealt: 0, points: 0, self: 0, hits: 0, terrain: 0, healed: 0, direct: false };
+    this.pointsMult = 1; // set from the fired weapon
   }
 
   get tank() { return this.s.tanks[this.shooter]; }
@@ -175,8 +176,10 @@ export class Sim {
       shooter.score -= amt;
       this.summary.self += amt;
     } else {
-      shooter.score += amt;
+      const pts = Math.round(amt * this.pointsMult);
+      shooter.score += pts;
       this.summary.dealt += amt;
+      this.summary.points += pts;
       this.summary.hits++;
       if (o.direct === i) this.summary.direct = true;
       if (o.leech) {
@@ -190,7 +193,7 @@ export class Sim {
         }
       }
     }
-    this.event('damage', { tank: i, amount: amt, by: this.shooter, x: rnd(tk.x), y: rnd(tk.y - 30), direct: o.direct === i, kind: o.kind || '' });
+    this.event('damage', { tank: i, amount: amt, points: mate ? -amt : Math.round(amt * this.pointsMult), by: this.shooter, x: rnd(tk.x), y: rnd(tk.y - 30), direct: o.direct === i, kind: o.kind || '' });
     if (s.mode === 'survival' && tk.hp <= 0) {
       tk.alive = false;
       tk.shield = 0;
@@ -359,6 +362,7 @@ export function simulateShot(state, input, seed, opts = {}) {
     const power = Math.max(0, Math.min(shooter.frozen ? FROZEN_POWER_CAP : 100, Number(input.power) || 0));
     shooter.angle = angle;
     shooter.power = power;
+    sim.pointsMult = weaponPoints(w);
     sim.event('fire', { tank: input.shooter, weapon: w.id, angle, power });
     BEHAVIORS[w.behavior](sim, { ...w.params, style: w.id, color: w.color }, { angle, power, weapon: w });
   }

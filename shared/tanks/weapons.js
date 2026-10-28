@@ -36,7 +36,7 @@ export const WEAPONS = [
   { id: 'spike', name: 'Earth Spike', icon: '▲', rarity: 'rare', color: '#9c6644', behavior: 'spike', params: { h: 150, half: 40, r: 25, dmg: 10 }, desc: 'A rock spike bursts up and launches tanks into the air.' },
   // ---- B. add-on set ----
   { id: 'meteor', name: 'Meteor Shower', icon: '☄', rarity: 'epic', color: '#ff6348', behavior: 'meteor', params: { n: 6, area: 180, r: 28, dmg: 15 }, desc: 'Opens a sky portal: 6 meteors rain down, 15 dmg each.' },
-  { id: 'blackhole', name: 'Black Hole', icon: '🌀', rarity: 'epic', color: '#a29bfe', behavior: 'blackhole', params: { pull: 260, life: 2, r: 70, dmg: 50, dmgR: 160 }, desc: 'A singularity pulls tanks in for 2 s, then collapses.' },
+  { id: 'blackhole', name: 'Black Hole', icon: '🌀', rarity: 'epic', color: '#a29bfe', behavior: 'blackhole', params: { pull: 260, life: 2, r: 70, dmg: 50, dmgR: 160, points: 3 }, desc: 'A singularity pulls tanks in for 2 s, then collapses.' },
   { id: 'lightning', name: 'Lightning Strike', icon: '⚡', rarity: 'epic', color: '#fff200', behavior: 'lightning', params: { range: 250, dmg: 35, r: 20 }, desc: 'A bolt jumps to the nearest enemy within 250 px for 35.' },
   { id: 'cluster', name: 'Cluster Bomb', icon: '✺', rarity: 'rare', color: '#ffa502', behavior: 'cluster', params: { n: 7, r: 22, dmg: 12 }, desc: 'Splits into 7 bomblets at the top of its arc.' },
   { id: 'betty', name: 'Bouncing Betty', icon: '⥁', rarity: 'rare', color: '#2ed573', behavior: 'betty', params: { bounces: 3, restitution: 0.6, r: 30, dmg: 18 }, desc: 'Bounces 3 times, exploding on each bounce for 18.' },
@@ -54,7 +54,7 @@ export const WEAPONS = [
   { id: 'mine', name: 'Sticky Mine', icon: '✹', rarity: 'rare', color: '#eb4d4b', behavior: 'mine', params: {}, desc: 'Arms after 1 turn. Blows (45 px, 40 dmg) when a tank moves within 60 px, or at your next turn.' },
   { id: 'wall', name: 'Mega Wall', icon: '▮', rarity: 'common', color: '#8d6e63', behavior: 'wall', params: { w: 30, h: 180 }, desc: 'Builds a 30 × 180 px dirt wall.' },
   { id: 'magnet', name: 'Magnet Pulse', icon: '🧲', rarity: 'rare', color: '#e84393', behavior: 'magnet', params: { range: 250, pull: 80, dmg: 15 }, desc: 'Pulls enemies within 250 px up to 80 px in, 15 dmg.' },
-  { id: 'nuke', name: 'Nuke', icon: '☢', rarity: 'legendary', color: '#fffa65', behavior: 'shell', params: { r: 150, dmg: 80, speed: 0.75, craterR: 120, fx: 'nuke' }, desc: 'Slow shell. Radius 150, 80 damage, huge crater.' },
+  { id: 'nuke', name: 'Nuke', icon: '☢', rarity: 'legendary', color: '#fffa65', behavior: 'shell', params: { r: 150, dmg: 80, speed: 0.75, craterR: 120, fx: 'nuke', points: 3 }, desc: 'Slow shell. Radius 150, 80 damage, huge crater.' },
   // ---- C. power pack ----
   { id: 'railgun', name: 'Rail Gun', icon: '⚌', rarity: 'epic', color: '#7d5fff', behavior: 'laser', params: { perPower: 16, dmg: 60, cut: 7 }, desc: 'Instant hyper-velocity slug (power × 16 px). Pierces every tank in line for 60.' },
   { id: 'twinmissile', name: 'Twin Missiles', icon: '🚀', rarity: 'epic', color: '#c8d6e5', behavior: 'homing', params: { n: 2, gap: 10, spread: 6, r: 30, dmg: 28, turn: 2.2 }, desc: 'Two homing missiles that hunt the nearest enemy.' },
@@ -89,11 +89,18 @@ export const CLASSIC_IDS = WEAPON_IDS.slice(0, 20);
 // Power tier 1-5 for the UI (how hard a weapon hits overall).
 export function weaponPower(w) {
   const p = w.params;
+  if (p.points >= 3) return 5;
   if (!p.dmg) return 1;
   const shots = { spread: p.n, burst: p.n, airstrike: p.n, hail: p.n, cluster: p.n, firework: p.n, meteor: p.n, homing: p.n, chain: p.n, splitter: p.n, hydra: p.n * p.n, betty: p.bounces, skipper: p.skips }[w.behavior] || 1;
   const extra = { napalm: (p.tickDmg || 0) * 8, quake: 20, tornado: 15, repulse: 20, ice: 15, volcano: 20 }[w.behavior] || 0;
   const v = (p.dmg * shots * 0.75 + extra) * (p.r ? Math.min(1.8, 0.7 + p.r / 80) : 1.2);
   return v < 22 ? 1 : v < 40 ? 2 : v < 60 ? 3 : v < 80 ? 4 : 5;
+}
+
+// Points per damage dealt: stronger weapons score more (Nuke and Black Hole the most).
+const POINTS_BY_TIER = { 1: 1, 2: 1, 3: 1.25, 4: 1.5, 5: 2 };
+export function weaponPoints(w) {
+  return w.params.points || POINTS_BY_TIER[weaponPower(w)];
 }
 
 // Short stats line for tooltips.
@@ -102,6 +109,8 @@ export function weaponStats(w) {
   const bits = [];
   if (p.dmg) bits.push(`${p.dmg} dmg${p.n ? ` × ${p.n}` : ''}`);
   if (p.r) bits.push(`radius ${p.r}`);
+  const pts = weaponPoints(w);
+  if (pts > 1) bits.push(`${pts}× points`);
   return bits.join(' · ') || w.rarity;
 }
 

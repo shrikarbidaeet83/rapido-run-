@@ -35,6 +35,7 @@ const prefs = {
   color: store.get('ssa-color', TANK_COLORS[Math.floor(Math.random() * TANK_COLORS.length)]),
   style: store.get('ssa-style', 'classic'),
   shake: Number(store.get('ssa-shake', '1')),
+  aimMode: store.get('ssa-aim', 'manual') === 'sling' ? 'sling' : 'manual', // 'manual' (Pocket Tanks style) | 'sling'
 };
 if (!TANK_STYLES.includes(prefs.style)) prefs.style = 'classic';
 if (!TANK_COLORS.includes(prefs.color)) prefs.color = TANK_COLORS[0];
@@ -49,7 +50,7 @@ const G = {
   turn: null, turnLocalDeadline: 0, lastTick: 0,
   aim: { angle: 60, power: 60, slot: null },
   plays: [], queue: [], moves: [], history: [],   // shots/moves animating (several at once in Free Fire)
-  free: null, freeEnds: 0, reloadUntil: 0, listSel: 0,
+  free: null, freeEnds: 0, reloadUntil: 0, listSel: 0, sling: null,
   tracers: new Map(), bubbles: new Map(),
   cam: { x: WORLD_W / 2, y: WORLD_H / 2, zoom: 1 },
   draftSel: null, draftDeadline: 0,
@@ -575,6 +576,7 @@ function initFreeAim() {
 
 function startTurnUi(t, announce = true) {
   G.turn = t;
+  G.sling = null;
   if (t.tanks) G.st.tanks = t.tanks.map((x) => ({ ...x }));
   if (t.mines) G.st.mines = t.mines.map((x) => ({ ...x }));
   syncDisplayFromState();
@@ -629,11 +631,12 @@ function renderHud() {
   const me = actor();
   const mine = me >= 0;
   $('hud-bottom').classList.toggle('off', !mine);
+  $('aim-hint').hidden = !mine || prefs.aimMode !== 'sling' || G.slingUsed;
   if (!mine) $('weapon-list').hidden = true;
   if (mine) {
     const tank = G.st.tanks[me];
-    $('moves-val').textContent = String(tank.moves);
-    const canMove = tank.moves > 0 && !frozenNow(me);
+    const canMove = !frozenNow(me);
+    void tank;
     $('move-left').disabled = !canMove;
     $('move-right').disabled = !canMove;
     $('power').max = frozenNow(me) ? FROZEN_POWER_CAP : 100;
@@ -744,18 +747,37 @@ async function fire() {
   if (res.error) { G.turn.fired = false; renderHud(); showToast(res.error); }
 }
 
+// Moving is free and unlimited: one 60 px step per press, hold to keep driving.
 async function move(dir) {
-  if (actor() < 0) return;
+  const me = actor();
+  if (me < 0 || G.movePending || G.moves.some((m) => m.p === me)) return;
+  G.movePending = true;
+  setTimeout(() => { G.movePending = false; }, 250);
   const res = await emit('move', { dir });
   if (res.error) showToast(res.error);
 }
 
 $('btn-fire').onclick = fire;
+function setAimMode(mode) {
+  prefs.aimMode = mode;
+  store.set('ssa-aim', mode);
+  G.sling = null;
+  const b = $('aim-mode');
+  b.classList.toggle('sling', mode === 'sling');
+  b.replaceChildren(el('b', null, mode === 'sling' ? '🏹' : '✋'), document.createTextNode(mode === 'sling' ? 'Sling' : 'Manual'));
+  $('aim-hint').hidden = mode !== 'sling' || actor() < 0;
+}
+$('aim-mode').onclick = () => { setAimMode(prefs.aimMode === 'sling' ? 'manual' : 'sling'); showToast(prefs.aimMode === 'sling' ? '🏹 Slingshot: pull back and release to fire' : '✋ Manual: sliders or drag to aim, then FIRE'); };
+setAimMode(prefs.aimMode);
 $('w-prev').onclick = () => cycleWeapon(-1);
 $('w-next').onclick = () => cycleWeapon(1);
 $('w-open').onclick = openWeaponList;
-$('move-left').onclick = () => move(-1);
-$('move-right').onclick = () => move(1);
+for (const [id, dir] of [['move-left', -1], ['move-right', 1]]) {
+  let hold = null;
+  const b = $(id);
+  b.addEventListener('pointerdown', () => { move(dir); clearInterval(hold); hold = setInterval(() => move(dir), 120); });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, () => clearInterval(hold));
+}
 $('angle').addEventListener('input', () => setAim(Number($('angle').value), G.aim.power));
 $('power').addEventListener('input', () => setAim(G.aim.angle, Number($('power').value)));
 for (const b of document.querySelectorAll('[data-step]')) {
@@ -877,7 +899,7 @@ function updateShot(P, dt) {
   }
   if (P.step >= L.steps) {
     P.idle += dt;
-    if (P.idle > 0.7) finishShot(P);
+    if (P.idle > 0.35) finishShot(P);
   }
 }
 
@@ -984,8 +1006,9 @@ function serverEvent(P, e) {
   const shooter = G.match.players[P.shooter];
   if (e.type === 'damage') {
     const enemy = e.tank !== P.shooter && G.st.tanks[e.tank].team !== G.st.tanks[P.shooter].team;
-    fx.number(e.x, e.y, `${enemy ? '+' : '-'}${e.amount}`, enemy ? shooter.color : '#ff5d5d', e.amount >= 40);
-    if (enemy) P.hits.set(e.tank, (P.hits.get(e.tank) || 0) + e.amount);
+    const pts = e.points ?? e.amount;
+    fx.number(e.x, e.y, `${enemy ? '+' : '-'}${enemy ? pts : e.amount}`, enemy ? shooter.color : '#ff5d5d', pts >= 40);
+    if (enemy) P.hits.set(e.tank, (P.hits.get(e.tank) || 0) + pts);
     if (G.st.mode === 'survival' && !isFree()) G.st.tanks[e.tank].hp = Math.max(0, G.st.tanks[e.tank].hp - e.amount);
   } else if (e.type === 'heal') {
     const v = G.vt[e.tank];
@@ -1049,7 +1072,6 @@ function finishMove(M) {
   if (!G.moves.includes(M)) return;
   G.moves = G.moves.filter((x) => x !== M);
   if (!isFree()) G.st.tanks[M.p] = { ...M.msg.tank }; // Free Fire applied it at the start (newer shots may have changed it since)
-  if (G.turn) G.turn.moves = M.msg.moves;
   if (!busy()) syncDisplayFromState();
   else { const v = G.vt[M.p], t = G.st.tanks[M.p]; v.x = t.x; v.y = t.y; v.tilt = t.tilt; }
   renderHud();
@@ -1290,14 +1312,48 @@ function wireSocket(sock) {
 // ---------- input ----------
 const canvas = $('canvas');
 const renderer = new Renderer(canvas);
+const SLING_DEAD_PX = 18;   // pulls shorter than this cancel
+const SLING_FULL_PX = 170;  // screen px of stretch for 100% power
+
+// Slingshot aiming: press anywhere, pull back, release to fire.
+// The shot goes opposite to the pull; the stretch length sets the power. Back at the start = cancel.
+function slingDrag(cx, cy, phase) {
+  const rect = canvas.getBoundingClientRect();
+  const x = cx - rect.left, y = cy - rect.top;
+  if (phase === 'start') {
+    G.sling = { ax: x, ay: y, px: x, py: y, power: 0, cancel: true, angle0: G.aim.angle, power0: G.aim.power };
+    return;
+  }
+  const s = G.sling;
+  if (!s) return;
+  s.px = x; s.py = y;
+  const dx = s.ax - x, dy = s.ay - y;
+  const stretch = Math.hypot(dx, dy);
+  s.cancel = stretch < SLING_DEAD_PX;
+  if (!s.cancel) {
+    let ang = Math.atan2(-dy, dx) / DEG;
+    if (ang < 0) ang = dx >= 0 ? 0 : 180;
+    const me = actor();
+    const cap = me >= 0 && frozenNow(me) ? FROZEN_POWER_CAP : 100;
+    s.power = Math.min(cap, ((stretch - SLING_DEAD_PX) / (SLING_FULL_PX - SLING_DEAD_PX)) * 100);
+    setAim(ang, s.power);
+  } else {
+    setAim(s.angle0, s.power0);
+  }
+  if (phase === 'end') {
+    G.sling = null;
+    if (!s.cancel) { G.slingUsed = true; $('aim-hint').hidden = true; fire(); }
+  }
+}
 const fx = new FX();
 fx.shakeScale = prefs.shake;
 const input = createInput(canvas, {
   drag(cx, cy, phase) {
     audio.unlock();
     const me = actor();
-    if (me < 0) return;
+    if (me < 0) { G.sling = null; return; }
     $('weapon-list').hidden = true;
+    if (prefs.aimMode === 'sling') return slingDrag(cx, cy, phase);
     const w = renderer.clientToWorld(cx, cy, G.cam);
     const v = G.vt[me];
     const dx = w.x - v.x, dy = w.y - (v.y - TURRET_PIVOT);
@@ -1320,13 +1376,14 @@ const input = createInput(canvas, {
     const st = fine ? 0.1 : 1;
     switch (action) {
       case 'openWeapons': if (!repeat) openWeaponList(); break;
+      case 'aimMode': if (!repeat) $('aim-mode').click(); break;
       case 'angleUp': setAim(G.aim.angle + st, G.aim.power); break;
       case 'angleDown': setAim(G.aim.angle - st, G.aim.power); break;
       case 'powerUp': setAim(G.aim.angle, G.aim.power + st); break;
       case 'powerDown': setAim(G.aim.angle, G.aim.power - st); break;
       case 'fire': if (!repeat) fire(); break;
-      case 'moveLeft': if (!repeat) move(-1); break;
-      case 'moveRight': if (!repeat) move(1); break;
+      case 'moveLeft': move(-1); break;
+      case 'moveRight': move(1); break;
       case 'prevWeapon': if (!repeat) cycleWeapon(-1); break;
       case 'nextWeapon': if (!repeat) cycleWeapon(1); break;
       default: return false;
@@ -1454,6 +1511,8 @@ function buildScene() {
   return {
     time: G.time, cam: G.cam, tanks, mines: st.mines, history: G.history, aim, survival, wind: 0,
     tracers: [...G.tracers.values()],
+    sling: me >= 0 ? G.sling : null,
+    slingColor: me >= 0 ? G.match.players[me].color : '#fff',
   };
 }
 

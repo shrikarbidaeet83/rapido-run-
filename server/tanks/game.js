@@ -2,7 +2,7 @@
 // No timers and no sockets: room.js drives it, and the headless tests drive it directly.
 
 import {
-  MOVES_PER_MATCH, MOVE_DISTANCE, POOL_EXTRA, MINE_TRIGGER, FROZEN_POWER_CAP,
+  MOVE_DISTANCE, POOL_EXTRA, MINE_TRIGGER, FROZEN_POWER_CAP,
 } from '../../shared/tanks/constants.js';
 import { mulberry32 } from '../../shared/tanks/rng.js';
 import { MAPS, getMap, generateTerrain } from '../../shared/tanks/maps.js';
@@ -51,7 +51,7 @@ export class Match {
     this.phase = 'draft';
     const n = this.players.length;
     this.shotsLeft = this.players.map(() => settings.weapons);
-    this.stats = this.players.map(() => ({ damage: 0, self: 0, healed: 0, shots: 0, offensive: 0, hits: 0, terrain: 0, best: null }));
+    this.stats = this.players.map(() => ({ damage: 0, points: 0, self: 0, healed: 0, shots: 0, offensive: 0, hits: 0, terrain: 0, best: null }));
     this.state = null;
     this.turn = null;
     this.turnNo = 0;
@@ -116,7 +116,7 @@ export class Match {
       tanks: this.players.map((p, i) => makeTank({ id: p.id, team: p.team, x: xs[i], terrain })),
       mines: [], nextMine: 1,
     };
-    this.state.tanks.forEach((t, i) => { t.angle = t.x < 800 ? 60 : 120; t.moves = MOVES_PER_MATCH; void i; });
+    this.state.tanks.forEach((t) => { t.angle = t.x < 800 ? 60 : 120; }); // moving is free and unlimited
     finalizeState(this.state);
     this.phase = 'play';
     this.turnNo = 0;
@@ -158,7 +158,7 @@ export class Match {
       const tank = this.state.tanks[p];
       this.turn = {
         player: p, number: this.turnNo, round: Math.min(this.settings.weapons, Math.floor((this.turnNo - 1) / n) + 1),
-        fired: false, frozen: tank.frozen > 0, moves: tank.moves,
+        fired: false, frozen: tank.frozen > 0,
       };
       return { player: p, mineShots };
     }
@@ -179,19 +179,16 @@ export class Match {
     if (!this.canControl(player)) return { error: 'Not your turn' };
     const tank = this.state.tanks[player];
     if (this.free ? tank.frozen > 0 : this.turn.frozen) return { error: 'Frozen' };
-    if (tank.moves <= 0) return { error: 'No moves left' };
     if (dir !== -1 && dir !== 1) return { error: 'Bad direction' };
     const dist = Math.round(MOVE_DISTANCE * getMap(this.state.map).moveMult);
     const path = planMove(this.state, player, dir, dist);
     if (path.length < 2) return { error: 'Blocked' };
     tank.x = path[path.length - 1];
     settleTank(this.state.terrain, tank);
-    tank.moves--;
-    if (this.turn) this.turn.moves = tank.moves;
     finalizeState(this.state);
     const mineShots = this.mineCheck([player]);
     if (this.isOver()) this.finish([]);
-    return { ok: true, path, tank: { ...tank }, moves: tank.moves, mineShots };
+    return { ok: true, path, tank: { ...tank }, mineShots };
   }
 
   // Armed mines blow when a tank that just moved is within range.
@@ -277,6 +274,7 @@ export class Match {
     const st = this.stats[input.shooter];
     const sum = res.summary;
     st.damage += sum.dealt;
+    st.points += sum.points;
     st.self += sum.self;
     st.terrain += sum.terrain;
     if (this.state.mode === 'classic') st.healed += sum.healed;

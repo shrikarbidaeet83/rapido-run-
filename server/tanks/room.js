@@ -4,7 +4,7 @@
 import {
   MAX_PLAYERS, MIN_PLAYERS, DEFAULT_SETTINGS, WEAPON_COUNTS, TURN_TIMES, DRAFT_PICK_SECONDS, STEP_RATE,
   RECONNECT_SECONDS, EMPTY_ROOM_MINUTES, BOT_THINK_MS, SHOT_END_PAUSE_MS, NAME_MAX, CHAT_MAX, CHAT_PER_10S,
-  EMOJIS, TANK_COLORS, TANK_STYLES, FREE_RELOAD_MS, FREE_SECONDS_PER_ROUND, FREE_MIN_SECONDS,
+  EMOJIS, TANK_COLORS, TANK_STYLES, MOVE_SPEED, FREE_RELOAD_MS, FREE_SECONDS_PER_ROUND, FREE_MIN_SECONDS,
 } from '../../shared/tanks/constants.js';
 import { MAP_IDS } from '../../shared/tanks/maps.js';
 import { mulberry32 } from '../../shared/tanks/rng.js';
@@ -25,7 +25,7 @@ const pickColor = (c, used) => (TANK_COLORS.includes(c) && !used.has(c) ? c : TA
 
 // How long clients need to play a shot back (server waits this long before the next turn).
 export function shotDuration(shot) {
-  let ms = (shot.steps / STEP_RATE) * 1000 + 700;
+  let ms = (shot.steps / STEP_RATE) * 1000 + 400;
   if (shot.events.some((e) => e.type === 'laser' || e.type === 'shield')) ms += 500;
   if (shot.final) ms += 2400; // slow motion on the deciding shot
   return Math.min(24000, ms + (shot.mineShots || []).reduce((s, m) => s + shotDuration(m), 0));
@@ -331,7 +331,7 @@ export class Room {
     this.phase = 'match';
     this.broadcastRoom();
     this.broadcastMatch();
-    this.later(1200, () => (this.match.free ? this.startFree() : this.nextTurn()));
+    this.later(800, () => (this.match.free ? this.startFree() : this.nextTurn()));
   }
 
   // ---------- Free Fire ----------
@@ -383,7 +383,7 @@ export class Room {
       if (this.phase !== 'match' || this.match.phase !== 'play' || !m.isBot || !this.match.canPlay(p)) return;
       const plan = planBotTurn(this.match, p, m.bot, this.botRng, { noMove: true });
       this.broadcast('aim', { player: p, angle: plan.angle, power: plan.power, slot: plan.slot });
-      this.later(500, () => {
+      this.later(300, () => {
         if (this.phase !== 'match' || this.match.phase !== 'play' || !m.isBot || !this.match.canPlay(p)) return;
         const r = this.freeFire(p, plan);
         this.scheduleFreeBot(p, r.error === 'Reloading' ? 300 : undefined);
@@ -446,13 +446,13 @@ export class Room {
         const mv = this.match.move(t.player, plan.move);
         if (!mv.error) {
           this.broadcastMove(t.player, mv);
-          wait = (mv.path.length / 90) * 1000 + mv.mineShots.reduce((s, x) => s + shotDuration(x), 0);
+          wait = (mv.path.length / MOVE_SPEED) * 1000 + mv.mineShots.reduce((s, x) => s + shotDuration(x), 0);
         }
         if (!still()) return;
         plan = planBotTurn(this.match, t.player, m.bot, this.botRng, { noMove: true });
       }
       this.broadcast('aim', { player: t.player, angle: plan.angle, power: plan.power, slot: plan.slot });
-      this.later(think * 0.4 + 700 + wait, () => { if (still()) this.doFire(t.player, plan); });
+      this.later(think * 0.4 + 350 + wait, () => { if (still()) this.doFire(t.player, plan); });
     });
   }
 
@@ -482,9 +482,9 @@ export class Room {
   }
 
   broadcastMove(p, res) {
-    this.broadcast('moved', { player: p, path: res.path, tank: res.tank, moves: res.moves });
+    this.broadcast('moved', { player: p, path: res.path, tank: res.tank });
     // mines set off by the move play right after it
-    let delay = (res.path.length / 90) * 1000;
+    let delay = (res.path.length / MOVE_SPEED) * 1000;
     for (const shot of res.mineShots) {
       this.later(delay, () => this.broadcast('shot', shot));
       delay += shotDuration(shot);

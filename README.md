@@ -26,12 +26,13 @@ A 2D side-view, turn-based artillery game in the style of Pocket Tanks, with ori
 ## Playing
 
 - **Home screen:** pick a name, tank body (6 styles) and colour (8). Then choose **Create Room**, **Join with Code**, **Quick Match** (joins any open public lobby), **Play vs Bot** or **Local 2-Player** (both players on one device, taking turns).
-- **Lobby:** up to 4 players. Ready toggles; the host has a crown and can kick, add bots (Easy/Medium/Hard) and change the settings: mode, map, **pace** (take turns / Free Fire), **arsenal** (draft / unlimited), **rounds** (5/10/15/30/40/50 shots each), turn timer (20/30/45 s/off), friendly fire, walls (none/wrap/bounce), 2 teams, and private/public. There is chat plus emoji reactions (😂 🔥 💀 👏 GG), which also pop up as bubbles over tanks during a match.
+- **Lobby:** up to 4 players. Ready toggles; the host has a crown and can kick, add bots (Easy/Medium/Hard) and change the settings: mode, map, **pace** (take turns / Free Fire), **arsenal** (draft / unlimited), **rounds** (5/10/15/30/40/50/100 shots each), turn timer (20/30/45 s/off), friendly fire, walls (none/wrap/bounce), 2 teams, and private/public. There is chat plus emoji reactions (😂 🔥 💀 👏 GG), which also pop up as bubbles over tanks during a match.
 - **Draft** (arsenal = Draft): a pool of `rounds × players + 5` weapons, picked one at a time in **snake order** (A B C C B A …), 15 s per pick. Arrow keys move the highlight and **Enter** picks. If the timer runs out, a random weapon is picked for you. The pool can repeat weapons, but the Nuke appears at most once.
 - **Unlimited arsenal:** no draft. Everyone gets all 60 weapons and can fire any of them every round. Legendary weapons (Nuke, Earth Shaker) are single-use.
-- **Take turns:** on your turn, aim, pick a weapon, optionally **move** (4 moves per match, up to 60 px each, no slopes steeper than 60°), then **fire**. One shot per turn. If the turn timer runs out, the turn is skipped and that shot is lost.
-- **Free Fire:** no turns. Everyone aims, moves and fires whenever they like, with a **3 s reload** between shots, so shots fly at the same time. The match ends when everyone has used their shots, when one side is left (Survival), or when the match clock runs out (`rounds × 8 s`, at least 90 s). Local 2-player games always take turns.
-- **Modes:** **Classic Score** (damage dealt = points; teammate damage with friendly fire on costs points; highest score wins) and **Survival** (100 HP; last tank or team alive wins; if the shots run out, highest HP wins).
+- **Take turns:** on your turn, aim, pick a weapon, optionally **move** (unlimited: 60 px per press, hold to keep driving; no slopes steeper than 60°), then **fire**. One shot per turn. If the turn timer runs out, the turn is skipped and that shot is lost.
+- **Free Fire:** no turns. Everyone aims, moves and fires whenever they like, with a **2 s reload** between shots, so shots fly at the same time. The match ends when everyone has used their shots, when one side is left (Survival), or when the match clock runs out (`rounds × 8 s`, at least 90 s). Local 2-player games always take turns.
+- **Points follow weapon power:** each damage point scores × the weapon's multiplier: 1× for light weapons, 1.25×/1.5×/2× for power tiers 3/4/5, and **3× for Nuke and Black Hole**. Damage numbers show the points.
+- **Modes:** **Classic Score** (points from damage dealt; teammate damage with friendly fire on costs points; highest score wins) and **Survival** (100 HP; last tank or team alive wins; if the shots run out, highest HP wins).
 - **Falling:** when the ground under a tank is destroyed, the tank falls and takes `0.2 × height` damage (max 20).
 - **Your own attacks never hurt you:** blasts, burns, falls caused by your shot, and your own mines.
 - **Results:** winner celebration, a stats table (score/HP, damage, best shot, accuracy, self-damage), awards (Sharpshooter, Demolition Expert, Biggest Hit), the room's win leaderboard, and **Rematch**, **Back to Lobby** and **Share Result** (PNG image).
@@ -40,7 +41,8 @@ A 2D side-view, turn-based artillery game in the style of Pocket Tanks, with ori
 
 | Action | Mouse / touch | Keyboard | Gamepad |
 |---|---|---|---|
-| Aim | drag anywhere: the direction from your tank sets the angle, the distance sets the power | ← / → angle, ↑ / ↓ power (hold **Shift** for 0.1 steps) | left stick (angle), right stick / triggers (power) |
+| Aim (**Manual**, Pocket Tanks style) | angle/power sliders and ←/→ −/+ buttons, or drag anywhere: the direction from your tank sets the angle, the distance sets the power. Then press FIRE |
+| Aim + fire (**Sling**) | press anywhere, pull back like a slingshot and release: it fires automatically. The shot goes opposite to the pull, the stretch sets the power, and dragging back to the start cancels. Switch modes with the ✋/🏹 HUD button or **S** (remembered) | ← / → angle, ↑ / ↓ power (hold **Shift** for 0.1 steps) | left stick (angle), right stick / triggers (power) |
 | Fire | **FIRE** button | Space / Enter | A |
 | Move | ◀ ▶ buttons | A / D | D-pad ← → |
 | Switch weapon | ‹ › or tap the weapon card for the list | Q / E, or **W** to open the list (arrows + **Enter** to equip) | LB / RB |
@@ -184,21 +186,21 @@ Safety limits per shot: 400 projectiles, 60 explosions, 20 s of simulation, a 12
 |---|---|---|
 | `WORLD_W` × `WORLD_H` | 1600 × 900 | logical world, letterboxed to any screen |
 | `STEP_RATE`, `SUBSTEP_PX` | 120, 4 | physics steps per second; max shell move per collision check |
-| `GRAVITY`, `POWER_K` | 300, 7 | px/s²; launch speed per power point |
+| `SPEED`, `GRAVITY`, `POWER_K` | 1.35, 300×SPEED², 7×SPEED | game speed; gravity px/s²; launch speed per power point (arcs stay the same at any SPEED) |
 | `MAX_PROJECTILES`, `MAX_EXPLOSIONS`, `MAX_SIM_SECONDS` | 400, 60, 20 | per-shot safety limits |
 | `SHELL_MAX_SECONDS`, `MAX_WALL_HITS` | 12, 4 | a single shell's lifetime and wall uses |
 | `TANK_W`, `TANK_H`, `TANK_HP` | 36, 18, 100 | hitbox and Survival HP |
 | `FALL_DMG_PER_PX`, `FALL_DMG_MAX` | 0.2, 20 | fall damage |
 | `DIRECT_HIT_BONUS` | 0.25 | +25% |
-| `MOVES_PER_MATCH`, `MOVE_DISTANCE`, `MOVE_MAX_SLOPE` | 4, 60, tan 60° | moving |
+| `MOVE_DISTANCE`, `MOVE_MAX_SLOPE` | 60, tan 60° | moving (unlimited) |
 | `SHIELD_HP`, `SHIELD_TURNS`, `FROZEN_POWER_CAP` | 40, 2, 80 | statuses |
 | `MINE_RADIUS`, `MINE_DAMAGE`, `MINE_TRIGGER` | 45, 40, 60 | sticky mines |
 | `DRAFT_PICK_SECONDS`, `POOL_EXTRA` | 15, 5 | draft |
-| `TURN_TIMES`, `WEAPON_COUNTS` | 20/30/45/off, 5/10/15/30/40/50 | host choices (turn timer, rounds) |
-| `FREE_RELOAD_MS`, `FREE_SECONDS_PER_ROUND`, `FREE_MIN_SECONDS` | 3000, 8, 90 | Free Fire reload and match clock |
+| `TURN_TIMES`, `WEAPON_COUNTS` | 20/30/45/off, 5/10/15/30/40/50/100 | host choices (turn timer, rounds) |
+| `FREE_RELOAD_MS`, `FREE_SECONDS_PER_ROUND`, `FREE_MIN_SECONDS` | 2000, 8, 90 | Free Fire reload and match clock |
 | `RECONNECT_SECONDS`, `EMPTY_ROOM_MINUTES` | 60, 5 | |
 | `MAX_ROOMS`, `CHAT_MAX`, `CHAT_PER_10S`, `RATE_LIMIT_PER_SEC` | 500, 120, 6, 30 | server limits |
-| `BOT_THINK_MS` | 1000–2000 | bot "thinking" time before firing |
+| `BOT_THINK_MS` | 500–1100 | bot "thinking" time before firing |
 
 ## Bots
 
@@ -208,7 +210,7 @@ Bots aim by simulating candidate shots. A fast ballistic probe over the angle/po
 - **Medium** prefers high-damage weapons and adds a small error.
 - **Hard** compares its top 3 weapons, aims almost perfectly, moves when it has no good shot, and raises a shield when low on HP in Survival.
 
-Bots wait 1–2 s before firing and visibly turn their turret first.
+Bots wait about 0.5–1 s before firing and visibly turn their turret first.
 
 ## Layout
 
@@ -233,7 +235,7 @@ tests/tanks/               determinism, rules, full-match, room and browser smok
 ## Tests (Shell Shock Arena)
 
 - **determinism:** each of the 60 weapons is run with 50 random seeds across all maps, modes and wall types. The same input and seed must give the same hash and events. Every shot must end within the limits, terrain must stay within bounds with no NaN, and no tank may end up outside the map or inside the terrain.
-- **rules:** damage falloff, direct-hit bonus, attacker immunity to its own blasts, falls and mines, friendly fire on/off, Survival death, fall damage, Leech, shields, moves (4 per match, slopes, edges), frozen tanks, mines (arming, proximity, owner's turn), draft (snake order, pool size, max 1 Nuke, N unique slots each, only the current picker can pick), terrain craters/diffs, and spawn spacing.
+- **rules:** damage falloff, direct-hit bonus, attacker immunity to its own blasts, falls and mines, friendly fire on/off, Survival death, fall damage, Leech, shields, moves (unlimited, slopes, edges), points multipliers, frozen tanks, mines (arming, proximity, owner's turn), draft (snake order, pool size, max 1 Nuke, N unique slots each, only the current picker can pick), terrain craters/diffs, and spawn spacing.
 - **match-sim:** a full 4-bot match on all 6 maps in both modes, using server code only. It checks for one winner (or a correct tie), that all weapons are used, that each score equals damage − teammate damage + Leech, no NaN, no stuck turns, and team results. There are also Free Fire matches with an unlimited arsenal over 30 rounds, plus Free Fire rules (no turns, thawing, own mines first).
 - **room:** lobby rules, chat sanitising and rate limits, draft auto-pick and turn timeouts (timers sped up), reconnect and bot takeover, spectators, cleanup of empty rooms and timers, and local 2-player rooms.
 - **smoke (Playwright):** A opens the chooser, creates a room and copies the invite link. B opens that link and joins. Both ready up and draft, then A fires. Both browsers must show the same scores and state hash as the server, with no console errors.
