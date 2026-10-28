@@ -834,22 +834,54 @@ function showToast(text) {
 }
 
 // ---------- shot playback ----------
+// Free Fire shots are simulated from where they were fired (origin), not where the shooter is now.
+const fromOrigin = (shot) => (shot.origin
+  ? { ...G.st, tanks: G.st.tanks.map((t, i) => (i === shot.input.shooter ? { ...t, ...shot.origin } : t)) }
+  : G.st);
+
+function useWeapon(input) {
+  if (!input.weapon) return;
+  const item = G.match.inv[input.shooter].find((w) => w.weapon === input.weapon && !w.used);
+  if (item && !item.infinite) item.used = true;
+}
+
+// Free Fire: a shell was fired. Draw its flight right away from a local prediction, and stop
+// just before it touches anything: the server works out the hit when it lands (startShot).
+function startLaunch(L) {
+  const local = simulateShot(fromOrigin(L), L.input, L.seed, { record: true });
+  const P = {
+    launch: L.id, holdAt: Math.min(L.t0, local.steps), held: 0,
+    shot: { input: L.input, events: [], terrain: [] }, local, step: 0, evI: 0, srvI: 0, srv: [], idle: 0, apex: false, lastY: null, history: [],
+    slowAt: -1, slowLeft: 0, hits: new Map(), shooter: L.input.shooter, tanks0: local.frames[0]?.tanks,
+  };
+  G.plays.push(P);
+  useWeapon(L.input);
+  G.match.shotsLeft = [...L.shotsLeft];
+  // statuses the launch changed (thaw, shields wearing off)
+  G.st.tanks = L.tanks.map((t) => ({ ...t }));
+  if (hashState(G.st) !== L.hash) { console.warn('state hash mismatch at launch: resyncing'); send('sync'); }
+  G.tracers.delete(L.input.shooter);
+  renderHud();
+}
+
 function startShot(shot) {
-  const local = simulateShot(G.st, shot.input, shot.seed, { record: true });
+  // a Free Fire shell landing takes over from its predicted flight
+  const pred = shot.launch ? G.plays.find((x) => x.launch === shot.launch) : null;
+  if (pred) G.plays = G.plays.filter((x) => x !== pred);
+  const from = shot.launch ? (pred ? Math.min(pred.step, shot.t0) : shot.t0) : 0;
+  const local = simulateShot(fromOrigin(shot), shot.input, shot.seed, { record: true });
   if (local.hash !== shot.hash) console.warn('local replay differs from server; snapping to server state');
   const srv = shot.events.filter((e) => ['damage', 'heal', 'destroyed', 'tracer'].includes(e.type));
   const firstHit = local.events.find((e) => e.type === 'explode' || e.type === 'damage' || e.type === 'laser');
   const P = {
-    shot, local, step: 0, evI: 0, srvI: 0, srv, idle: 0, apex: false, lastY: null, history: [],
-    slowAt: shot.final && firstHit ? Math.max(0, firstHit.t - 20) : -1, slowLeft: 1,
+    shot, local, step: from, evI: 0, srvI: 0, srv, idle: 0, apex: !!pred?.apex, lastY: pred?.lastY ?? null, history: [],
+    slowAt: shot.final && firstHit ? Math.max(from, firstHit.t - 20) : -1, slowLeft: 1,
     hits: new Map(), shooter: shot.input.shooter, tanks0: local.frames[0]?.tanks,
   };
+  // the flight was already shown: skip its air events (muzzle flash, splits)
+  while (P.evI < local.events.length && local.events[P.evI].t < from) P.evI++;
   G.plays.push(P);
-  if (shot.input.weapon) {
-    const inv = G.match.inv[shot.input.shooter];
-    const item = inv.find((w) => w.weapon === shot.input.weapon && !w.used);
-    if (item && !item.infinite) item.used = true;
-  }
+  if (!shot.launch) useWeapon(shot.input);
   if (shot.shotsLeft) G.match.shotsLeft = [...shot.shotsLeft];
   G.tracers.delete(shot.input.shooter);
   // Free Fire: the next shot may arrive mid-animation, so the synced state moves on right away
@@ -888,9 +920,16 @@ function updateShot(P, dt) {
   let speed = 1;
   if (P.slowAt >= 0 && P.step >= P.slowAt && P.slowLeft > 0) { speed = 0.3; P.slowLeft -= dt; }
   P.step += dt * STEP_RATE * speed;
+  if (P.launch) {
+    // predicted flight: wait at the point of impact for the server's result
+    if (P.step >= P.holdAt) {
+      P.step = Math.max(0, P.holdAt - 0.01);
+      if ((P.held += dt) > 3) { G.plays = G.plays.filter((x) => x !== P); return; } // result lost: drop it
+    }
+  }
   const step = Math.floor(P.step);
   const L = P.local;
-  while (P.evI < L.events.length && L.events[P.evI].t <= step) localEvent(L.events[P.evI++]);
+  while (P.evI < L.events.length && L.events[P.evI].t <= step && !(P.launch && L.events[P.evI].t >= P.holdAt)) localEvent(L.events[P.evI++]);
   while (P.srvI < P.srv.length && P.srv[P.srvI].t <= step) serverEvent(P, P.srv[P.srvI++]);
   const frames = L.frames;
   const fi = Math.min(frames.length - 1, Math.floor(P.step / FRAME_EVERY) - 1);
@@ -1301,6 +1340,8 @@ function wireSocket(sock) {
     if (isFree()) { startShot(s); return; }
     enqueue(() => { if (G.turn && G.turn.player === s.input.shooter && s.input.weapon) G.turn.fired = true; startShot(s); });
   });
+  sock.on('launch', (L) => { if (isFree() && G.st) startLaunch(L); });
+  sock.on('timeUp', () => { if (!isFree()) return; G.freeEnds = performance.now(); banner("TIME'S UP!", '#ff5d5d'); renderHud(); });
   sock.on('free', (m) => { if (!G.match || !G.st) return; startFreeUi(m); initFreeAim(); renderHud(); });
   sock.on('skipped', (m) => enqueue(() => {
     const p = G.match.players[m.player];
@@ -1453,6 +1494,7 @@ function frame(now) {
   for (const [k, b] of G.bubbles) { b.t += dt; if (b.t > 4) G.bubbles.delete(k); }
   if (G.time < G.quakeUntil) fx.shake = Math.max(fx.shake, 8 * prefs.shake);
   fx.update(dt, 0);
+  if (!document.hidden) fx.adapt(dt);
   updateCamera(dt);
   renderer.draw(buildScene(), fx);
 }

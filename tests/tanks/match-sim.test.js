@@ -7,6 +7,7 @@ import { mulberry32 } from '../../shared/tanks/rng.js';
 import { MAP_IDS } from '../../shared/tanks/maps.js';
 import { DEFAULT_SETTINGS } from '../../shared/tanks/constants.js';
 import { PLAYERS } from './helpers.js';
+import { simulateShot, hashState } from '../../shared/tanks/simulate.js';
 
 const LEVELS = ['easy', 'medium', 'hard', 'hard'];
 
@@ -156,4 +157,69 @@ test('Free Fire: a tank that has used all its shots can still move', () => {
   assert.notEqual(m.state.tanks[0].x, x0);
   m.state.tanks[1].alive = false;
   assert.equal(m.move(1, 1).error, 'Not your turn', 'destroyed tanks cannot move');
+});
+
+// Find an aim with the Big Shot that hits tank 1 as the world is now.
+function aimAt(m, target) {
+  const slot = m.inv[0].find((w) => w.weapon === 'heavy').slot;
+  for (let power = 20; power <= 100; power += 2) {
+    for (let angle = 10; angle <= 170; angle += 2) {
+      const res = simulateShot(m.state, { shooter: 0, weapon: 'heavy', angle, power }, 1);
+      if (res.events.some((e) => e.type === 'damage' && e.tank === target && e.direct)) return { slot, angle, power };
+    }
+  }
+  return null;
+}
+
+test('Free Fire: a shot hits where tanks are when it lands, not when it was fired', () => {
+  const setup = () => {
+    const m = new Match(PLAYERS(2), { ...DEFAULT_SETTINGS, map: 'hills', pace: 'free', arsenal: 'unlimited' }, 21);
+    const aim = aimAt(m, 1);
+    assert.ok(aim, 'found a hitting aim');
+    return { m, aim };
+  };
+  // the target stays put: hit, and the points only change when it lands
+  {
+    const { m, aim } = setup();
+    const { launch } = m.launchFree(0, aim);
+    assert.ok(launch.t0 > 0, 'the shell flies before it lands');
+    assert.equal(m.state.tanks[0].score, 0, 'no points while the shell is in the air');
+    assert.equal(m.isOver(), false);
+    const shot = m.resolveFree(launch.id);
+    assert.ok(shot.events.some((e) => e.type === 'damage' && e.tank === 1));
+    assert.ok(m.state.tanks[0].score > 0);
+  }
+  // the target drives away before it lands: no hit, no points lost
+  {
+    const { m, aim } = setup();
+    const { launch } = m.launchFree(0, aim);
+    const away = m.state.tanks[1].x > m.state.tanks[0].x ? 1 : -1;
+    for (let k = 0; k < 4; k++) m.move(1, away);
+    const shot = m.resolveFree(launch.id);
+    assert.ok(!shot.events.some((e) => e.type === 'damage' && e.tank === 1), 'the target escaped');
+    assert.equal(m.state.tanks[1].score, 0);
+  }
+  // the shooter drives off after firing: the shot still leaves from where it was fired
+  {
+    const { m, aim } = setup();
+    const { launch } = m.launchFree(0, aim);
+    const back = m.state.tanks[1].x > m.state.tanks[0].x ? -1 : 1;
+    m.move(0, back);
+    const moved = m.state.tanks[0].x;
+    const shot = m.resolveFree(launch.id);
+    assert.ok(shot.events.some((e) => e.type === 'damage' && e.tank === 1), 'same hit as fired');
+    assert.equal(m.state.tanks[0].x, moved, 'the shooter stays where it drove');
+    assert.equal(shot.after.hash, hashState(m.state));
+  }
+});
+
+test("Free Fire: time's up ends the match only after shells in the air land", () => {
+  const m = new Match(PLAYERS(2), { ...DEFAULT_SETTINGS, map: 'hills', pace: 'free', arsenal: 'unlimited' }, 22);
+  const slot = m.inv[0].find((w) => w.weapon === 'single').slot;
+  const { launch } = m.launchFree(0, { slot, angle: 60, power: 60 });
+  m.finishNow();
+  assert.equal(m.phase, 'play', 'still waiting for the shell');
+  assert.ok(!m.canControl(1), 'no new shots after time is up');
+  m.resolveFree(launch.id);
+  assert.equal(m.phase, 'over');
 });

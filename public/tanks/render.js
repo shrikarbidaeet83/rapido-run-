@@ -256,6 +256,31 @@ function buildTexture(map, seed) {
   return c;
 }
 
+// Name tags drawn once per label and pixel scale, then reused (text is slow to draw every frame).
+const tagCache = new Map();
+function tagSprite(label, alive, px) {
+  px = Math.max(0.5, Math.round(px * 4) / 4);
+  const key = `${label}|${alive}|${px}`;
+  let c = tagCache.get(key);
+  if (c) return c;
+  if (tagCache.size > 64) tagCache.clear();
+  c = document.createElement('canvas');
+  let g = c.getContext('2d');
+  const font = '600 13px system-ui, sans-serif';
+  g.font = font;
+  c.w = Math.ceil(g.measureText(label).width) + 8;
+  c.width = Math.ceil(c.w * px); c.height = Math.ceil(20 * px);
+  g = c.getContext('2d');
+  g.scale(px, px);
+  g.font = font; g.textAlign = 'center';
+  g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.7)'; g.lineJoin = 'round';
+  g.strokeText(label, c.w / 2, 15);
+  g.fillStyle = alive ? '#fff' : '#999';
+  g.fillText(label, c.w / 2, 15);
+  tagCache.set(key, c);
+  return c;
+}
+
 // ---------- renderer ----------
 export class Renderer {
   constructor(canvas) {
@@ -293,6 +318,7 @@ export class Renderer {
   setMap(mapId, seed = 1) {
     this.map = getMap(mapId);
     this.bg = buildBackground(this.map, seed);
+    this.bgKey = this.bgLast = null;
     this.texture = buildTexture(this.map, seed);
     this.pattern = this.tctx.createPattern(this.texture, 'repeat');
     const rnd = srand(seed ^ 77);
@@ -376,15 +402,24 @@ export class Renderer {
     } else {
       ctx.beginPath(); ctx.rect(this.ox, this.oy, WORLD_W * this.scale, WORLD_H * this.scale); ctx.clip();
     }
-    // parallax background
+    // parallax background: once the camera holds still, the three layers are drawn once into a
+    // screen-sized cache and reused (Free Fire never moves the camera)
     if (this.bg) {
-      const dx = cam.x - WORLD_W / 2, dy = cam.y - WORLD_H / 2;
-      for (const [layer, k] of [[this.bg.sky, 0.05], [this.bg.far, 0.25], [this.bg.near, 0.5]]) {
-        const z = 1 + (cam.zoom - 1) * k * 1.5;
-        const s = this.scale * z;
-        ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * (this.ox + this.scale * WORLD_W / 2 - (WORLD_W / 2 + dx * k) * s), dpr * (this.oy + this.scale * WORLD_H / 2 - (WORLD_H / 2 + dy * k) * s));
-        ctx.drawImage(layer, -100, -50);
+      const key = `${cam.x.toFixed(1)},${cam.y.toFixed(1)},${cam.zoom.toFixed(3)},${this.canvas.width},${this.canvas.height}`;
+      if (key === this.bgKey) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(this.bgCache, 0, 0);
+      } else if (key === this.bgLast) {
+        if (!this.bgCache) this.bgCache = document.createElement('canvas');
+        this.bgCache.width = this.canvas.width; this.bgCache.height = this.canvas.height;
+        this.drawParallax(this.bgCache.getContext('2d'), cam);
+        this.bgKey = key;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(this.bgCache, 0, 0);
+      } else {
+        this.drawParallax(ctx, cam);
       }
+      this.bgLast = key;
     }
     ctx.setTransform(dpr * T.s, 0, 0, dpr * T.s, dpr * T.tx, dpr * T.ty);
     const view = { l: -T.tx / T.s, t: -T.ty / T.s, r: (this.cw - T.tx) / T.s, b: (this.ch - T.ty) / T.s };
@@ -443,6 +478,16 @@ export class Renderer {
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, this.cw, this.ch);
       ctx.globalAlpha = 1;
+    }
+  }
+
+  drawParallax(ctx, cam) {
+    const dpr = this.dpr, dx = cam.x - WORLD_W / 2, dy = cam.y - WORLD_H / 2;
+    for (const [layer, k] of [[this.bg.sky, 0.05], [this.bg.far, 0.25], [this.bg.near, 0.5]]) {
+      const z = 1 + (cam.zoom - 1) * k * 1.5;
+      const s = this.scale * z;
+      ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * (this.ox + this.scale * WORLD_W / 2 - (WORLD_W / 2 + dx * k) * s), dpr * (this.oy + this.scale * WORLD_H / 2 - (WORLD_H / 2 + dy * k) * s));
+      ctx.drawImage(layer, -100, -50);
     }
   }
 
@@ -623,9 +668,8 @@ export class Renderer {
     ctx.font = '600 13px system-ui, sans-serif';
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.7)';
     const label = t.name + (t.bot ? ' · BOT' : '') + (t.offline ? ' · ⚠' : '') + (t.buried && t.alive ? ' · ⛏ BURIED' : '');
-    ctx.strokeText(label, t.x, y - (scene.survival ? 8 : 0));
-    ctx.fillStyle = t.alive ? '#fff' : '#999';
-    ctx.fillText(label, t.x, y - (scene.survival ? 8 : 0));
+    const spr = tagSprite(label, t.alive, ctx.getTransform().a);
+    ctx.drawImage(spr, t.x - spr.w / 2, y - (scene.survival ? 8 : 0) - 15, spr.w, 20);
     if (scene.survival && t.alive) {
       const w = 40, k = Math.max(0, t.hp) / TANK_HP;
       ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(t.x - w / 2 - 1, y - 3, w + 2, 6);

@@ -174,6 +174,9 @@ test('Free Fire room: no draft (unlimited), bots shoot on reload, the match ends
   const shooters = new Set(events(room, 'shot').map((l) => l.data.input.shooter));
   assert.ok(shooters.has(1) && shooters.has(2), 'both bots fired');
   assert.equal(events(room, 'turn').length, 0, 'no turns in Free Fire');
+  const launches = events(room, 'launch').map((l) => l.data.id);
+  assert.ok(launches.length >= 2, 'shots are announced when fired');
+  assert.deepEqual(events(room, 'shot').filter((l) => l.data.launch).map((l) => l.data.launch).sort((a, b) => a - b), launches.sort((a, b) => a - b), '...and lands later');
   room.destroy();
   assert.equal(room.timers.size, 0);
 });

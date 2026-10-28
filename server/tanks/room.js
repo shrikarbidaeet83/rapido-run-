@@ -9,6 +9,7 @@ import {
 import { MAP_IDS } from '../../shared/tanks/maps.js';
 import { mulberry32 } from '../../shared/tanks/rng.js';
 import { Match } from './game.js';
+import { hashState } from '../../shared/tanks/simulate.js';
 import { planBotTurn, BOT_LEVELS, BOT_NAMES } from './bot.js';
 
 export function sanitizeName(raw, fallback = 'Player') {
@@ -343,7 +344,12 @@ export class Room {
     this.freeEndsAt = Date.now() + (secs * 1000) / this.fast;
     this.reloadUntil = this.match.players.map(() => 0);
     this.broadcast('free', { duration: (secs * 1000) / this.fast, reload: FREE_RELOAD_MS / this.fast, shotsLeft: this.match.shotsLeft });
-    this.freeClock = this.later(secs * 1000, () => { this.match.finishNow(); this.endMatch(); });
+    this.freeClock = this.later(secs * 1000, () => {
+      // time's up: no more shots; whatever is still in the air lands first
+      this.match.finishNow();
+      this.broadcast('timeUp', {});
+      if (this.match.phase === 'over' && !this.ending) { this.ending = true; this.later(SHOT_END_PAUSE_MS, () => this.endMatch()); }
+    });
     this.match.players.forEach((_, i) => this.scheduleFreeBot(i, 400 + Math.random() * 800));
   }
 
@@ -356,21 +362,40 @@ export class Room {
   freeFire(p, msg) {
     const now = Date.now();
     if (now < this.reloadUntil[p]) return { error: 'Reloading' };
-    const res = this.match.fireFree(p, msg);
+    const res = this.match.launchFree(p, msg);
     if (res.error) return res;
     this.reloadUntil[p] = now + FREE_RELOAD_MS / this.fast;
     let longest = 0;
-    for (const shot of [...res.pre, res.shot].filter(Boolean)) {
+    for (const shot of res.pre) {
       shot.final = this.match.phase === 'over';
       this.broadcast('shot', shot);
       longest = Math.max(longest, shotDuration(shot));
     }
+    if (res.launch) {
+      // everyone starts drawing the shell now; the hit is worked out when it lands
+      const L = res.launch;
+      this.broadcast('launch', { id: L.id, input: L.input, seed: L.seed, origin: L.origin, t0: L.t0, shotsLeft: L.shotsLeft, tanks: this.match.publicTanks(), hash: hashState(this.match.state) });
+      this.later((L.t0 / STEP_RATE) * 1000, () => this.landFree(L.id));
+    }
+    this.checkFreeOver(longest);
+    return { ok: true, reload: FREE_RELOAD_MS / this.fast };
+  }
+
+  landFree(id) {
+    if (this.phase !== 'match' || !this.match?.free) return;
+    const shot = this.match.resolveFree(id);
+    if (!shot) return;
+    shot.final = this.match.phase === 'over';
+    this.broadcast('shot', shot);
+    this.checkFreeOver(shotDuration(shot) - (shot.t0 / STEP_RATE) * 1000);
+  }
+
+  checkFreeOver(remainingMs) {
     if (this.match.phase === 'over' && !this.ending) {
       this.ending = true;
       this.cancel(this.freeClock);
-      this.later(longest + SHOT_END_PAUSE_MS, () => this.endMatch());
+      this.later(Math.max(0, remainingMs) + SHOT_END_PAUSE_MS, () => this.endMatch());
     }
-    return { ok: true, reload: FREE_RELOAD_MS / this.fast };
   }
 
   scheduleFreeBot(p, delay) {

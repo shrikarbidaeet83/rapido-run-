@@ -50,6 +50,8 @@ export class FX {
     for (let i = 0; i < MAX_PARTICLES; i++) this.pool.push({ on: false });
     this.cursor = 0;
     this.live = 0;
+    this.budget = MAX_PARTICLES; // lowered on slow devices (see adapt)
+    this.ema = 1 / 60;
     this.blasts = [];   // fireballs and flashes
     this.rings = [];    // shockwaves
     this.bolts = [];    // lightning
@@ -69,6 +71,9 @@ export class FX {
   }
 
   spawn(kind, x, y, vx, vy, life, size, color, opt) {
+    // past half the budget, thin new particles out more and more, so busy moments stay smooth
+    const half = this.budget / 2;
+    if (this.live > half && Math.random() < (this.live - half) / half) return null;
     // ring buffer over the pool: if all slots are busy, the oldest particle is reused
     for (let n = 0; n < MAX_PARTICLES; n++) {
       const p = this.pool[this.cursor];
@@ -80,6 +85,13 @@ export class FX {
       return p;
     }
     return null;
+  }
+
+  // Frame-time feedback: shrink the particle budget when frames run slow, grow it back when fast.
+  adapt(dt) {
+    this.ema += (dt - this.ema) * 0.05;
+    if (this.ema > 1 / 45) this.budget = Math.max(200, this.budget * 0.97);
+    else if (this.ema < 1 / 56) this.budget = Math.min(MAX_PARTICLES, this.budget + 4);
   }
 
   addShake(v) { this.shake = Math.min(30, this.shake + v * this.shakeScale); }

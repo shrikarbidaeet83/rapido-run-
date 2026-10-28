@@ -30,7 +30,7 @@ A 2D side-view, turn-based artillery game in the style of Pocket Tanks, with ori
 - **Draft** (arsenal = Draft): a pool of `rounds × players + 5` weapons, picked one at a time in **snake order** (A B C C B A …), 15 s per pick. Arrow keys move the highlight and **Enter** picks. If the timer runs out, a random weapon is picked for you. The pool can repeat weapons, but the Nuke appears at most once.
 - **Unlimited arsenal:** no draft. Everyone gets all 60 weapons and can fire any of them every round. Legendary weapons (Nuke, Earth Shaker) are single-use.
 - **Take turns:** on your turn, aim, pick a weapon, optionally **move** (unlimited: 60 px per press, hold to keep driving; no slopes steeper than 60°), then **fire**. One shot per turn. If the turn timer runs out, the turn is skipped and that shot is lost.
-- **Free Fire:** no turns. Everyone aims, moves and fires whenever they like, with a **2 s reload** between shots, so shots fly at the same time. The match ends when everyone has used their shots, when one side is left (Survival), or when the match clock runs out (`rounds × 8 s`, at least 90 s). Once you've used all your shots you can still drive your tank until the match ends. Local 2-player games always take turns.
+- **Free Fire:** no turns. Everyone aims, moves and fires whenever they like, with a **2 s reload** between shots, so shots fly at the same time. The match ends when everyone has used their shots, when one side is left (Survival), or when the match clock runs out (`rounds × 8 s`, at least 90 s). Once you've used all your shots you can still drive your tank until the match ends. A shot hits tanks where they are **when it lands**, so you can drive out of the way of an incoming shell, and points change only on impact. When the clock runs out, shells already in the air still land. Local 2-player games always take turns.
 - **Points follow weapon power:** each damage point scores × the weapon's multiplier: 1× for light weapons, 1.25×/1.5×/2× for power tiers 3/4/5, and **3× for Nuke and Black Hole**. Damage numbers show the points.
 - **Modes:** **Classic Score** (points from damage dealt; teammate damage with friendly fire on costs points; highest score wins) and **Survival** (100 HP; last tank or team alive wins; if the shots run out, highest HP wins).
 - **Falling:** when the ground under a tank is destroyed, the tank falls and takes `0.2 × height` damage (max 20).
@@ -180,6 +180,13 @@ Each map has its own seeded terrain generator, palette and parallax background. 
 3. The server broadcasts `shot { input, seed, events, hash, terrain diff (changed column ranges), tanks, mines }`.
 4. Each client replays the shot locally with the same shared code to animate the flight. Damage numbers come from the server's timeline, never from the client's own simulation. When the animation ends, the client applies the server's final state and checks the hash. On a mismatch it asks the server for a full resync, so a desync can't last.
 
+**Free Fire** works out each hit when the shell lands, not when it's fired:
+
+1. On `fire`, the server takes the weapon and the shot, does a dry run to find the step `t0` where the shell first touches the world, and broadcasts `launch { id, input, seed, origin, t0 }` straight away. `origin` is the shooter's position when it fired.
+2. Every client draws the flight from its own prediction and holds the shell just before `t0`.
+3. At `t0` the server runs the real simulation from `origin` against where every tank is *now*. Anyone who drove away is missed. It then broadcasts the usual `shot` (tagged with the launch `id`), and clients carry on from the point of impact. Scores, craters and damage numbers all change at impact, never earlier.
+4. The shooter stays wherever it has driven since firing (unless the shot moved it, as Teleport does). `shot.after` carries that final position and the state hash.
+
 Safety limits per shot: 400 projectiles, 60 explosions, 20 s of simulation, a 12 s lifetime per shell, and at most 4 wall wraps/bounces per shell. Sticky mines, shields and frozen status live in the authoritative state and are sent with every turn. Napalm, lava and acid play out fully inside the shot that created them.
 
 ## Tunable constants ([shared/tanks/constants.js](shared/tanks/constants.js))
@@ -260,7 +267,8 @@ tests/tanks/               determinism, rules, full-match, room and browser smok
 - Rooms live in memory in one process. A server restart ends the current games, and the server can't be scaled to several instances without sticky sessions and a shared store.
 - Clients replay shots with the shared simulation. Different browser engines could in theory round `Math.sin` differently. If they do, the flight animation may differ slightly, but the final state always snaps to the server's, so scores never desync.
 - The QR code needs the cdnjs script, so it is unavailable offline (Copy Link and Share still work).
-- Persistent napalm, lava and acid play out within the shot that created them, rather than lingering into later turns.
+- Persistent napalm, lava and acid play out within the shot that created them, rather than lingering into later turns. In Free Fire, damage over time (napalm, acid, tornado) uses tank positions at impact, so driving out of a fire after it lands doesn't help.
+- **Performance:** the parallax background is cached while the camera is still, name tags are cached as images, and the particle budget shrinks automatically when frames run slow (and grows back when they're fast).
 
 ---
 

@@ -18,6 +18,8 @@ import { terrainToInts, diffTerrain } from '../../shared/tanks/terrain.js';
 
 // Weapons that are not meant to hit anything (they don't count for accuracy).
 export const UTILITY = new Set(['dirtball', 'slinger', 'tracer', 'teleport', 'shield', 'wall', 'mine']);
+// Events that happen in the air; anything else means the shot has reached the world.
+const FLIGHT_EVENTS = new Set(['fire', 'split', 'crazy', 'airstrike', 'tracer', 'skylanceMark']);
 
 export function snakeOrder(nPlayers, rounds) {
   const order = [];
@@ -58,6 +60,9 @@ export class Match {
     this.lastShooter = -1;
     this.winner = null;
     this.pick = 0;
+    this.pending = new Map(); // Free Fire shots in the air
+    this.launchNo = 0;
+    this.timeUp = false;
     if (settings.arsenal === 'unlimited') {
       this.pool = [];
       this.order = [];
@@ -133,7 +138,7 @@ export class Match {
 
   // Who may act right now: the active player (turns) or any player with shots left (Free Fire).
   canControl(player) {
-    if (this.phase !== 'play') return false;
+    if (this.phase !== 'play' || this.timeUp) return false;
     return this.free ? this.canPlay(player) : this.isActive(player);
   }
 
@@ -220,26 +225,73 @@ export class Match {
   }
 
   // Free Fire: anyone with shots left fires whenever the room says they've reloaded.
-  // Their own armed mines go off first (like the start of a turn). Returns { pre, shot }.
-  fireFree(player, msg) {
+  // A shot is launched now and resolved when it lands (resolveFree), so it hits tanks where
+  // they are at impact, not where they were when it was fired. Their own armed mines go off
+  // first (like the start of a turn). Returns { pre, launch }.
+  launchFree(player, msg) {
     if (!this.free) return { error: 'Not a Free Fire match' };
     if (!this.canControl(player)) return { error: 'No shots left' };
     const ok = this.checkShot(player, msg);
     if (ok.error) return ok;
     for (const m of this.state.mines) m.armed = true;
     const pre = this.state.mines.filter((m) => m.owner === player).map((m) => this.detonate(m));
-    if (!this.canPlay(player)) { if (this.isOver()) this.finish([]); return { pre, shot: null }; }
+    if (!this.canPlay(player)) { if (this.isOver()) this.finish([]); return { pre, launch: null }; }
     const tank = this.state.tanks[player];
-    const frozen = tank.frozen > 0;
-    const shot = this.shoot(player, ok.item, ok.angle, frozen ? Math.min(ok.power, FROZEN_POWER_CAP) : ok.power);
-    if (frozen) this.state.tanks[player].frozen = 0;
+    const item = ok.item;
+    if (!item.infinite) item.used = true;
+    this.shotsLeft[player]--;
+    const power = tank.frozen > 0 ? Math.min(ok.power, FROZEN_POWER_CAP) : ok.power;
+    const input = { shooter: player, weapon: item.weapon, angle: Math.round(ok.angle * 10) / 10, power: Math.round(power * 10) / 10 };
+    const seed = this.rng.seed();
+    const origin = { x: tank.x, y: tank.y, tilt: tank.tilt, buried: tank.buried || 0 };
+    // when does it first touch the world? (a dry run against the world as it is now)
+    const dry = simulateShot(this.state, input, seed);
+    const hit = dry.events.find((e) => !FLIGHT_EVENTS.has(e.type));
+    const launch = { id: ++this.launchNo, input, seed, origin, t0: hit ? hit.t : dry.steps, shotsLeft: [...this.shotsLeft] };
+    this.pending.set(launch.id, launch);
+    tank.frozen = 0;
     this.wearShields(player);
+    return { pre, launch };
+  }
+
+  // The shell lands: simulate it from where it was fired, against where everyone is now.
+  resolveFree(id) {
+    const L = this.pending.get(id);
+    if (!L) return null;
+    this.pending.delete(id);
+    const p = L.input.shooter;
+    const now = { ...this.state.tanks[p] };
+    Object.assign(this.state.tanks[p], L.origin);
+    const before = this.state.tanks.map((t) => t.x);
+    const res = simulateShot(this.state, L.input, L.seed);
+    const shot = this.applyShot(L.input, L.seed, res, L.input.weapon);
+    const moved = this.state.tanks.map((t, i) => i).filter((i) => Math.abs(this.state.tanks[i].x - before[i]) > 2);
+    shot.mineShots = this.mineCheck(moved);
+    // the shooter goes back to where it has driven since (unless the shot itself moved it)
+    const tk = this.state.tanks[p];
+    if (Math.abs(tk.x - L.origin.x) <= 2) {
+      tk.x = now.x;
+      tk.buried = now.buried || 0;
+      tk.y = now.y;
+      settleTank(this.state.terrain, tk);
+      finalizeState(this.state);
+    }
+    shot.launch = L.id;
+    shot.origin = L.origin;
+    shot.t0 = L.t0;
     if (this.isOver()) this.finish([]);
     shot.shotsLeft = [...this.shotsLeft];
-    // statuses that changed after the shot (thaw, shields wearing off): clients apply these
-    // once the shot and any mines it set off are applied, so their next replay starts in sync
+    // where the shooter really is (and any status changes): clients apply this once the shot
+    // and the mines it set off are applied, so their next replay starts in sync
     shot.after = { tanks: this.publicTanks(), hash: hashState(this.state) };
-    return { pre, shot };
+    return shot;
+  }
+
+  // Launch and land at once (headless tests and bots-only simulations).
+  fireFree(player, msg) {
+    const r = this.launchFree(player, msg);
+    if (r.error) return r;
+    return { pre: r.pre, shot: r.launch ? this.resolveFree(r.launch.id) : null };
   }
 
   checkShot(player, { slot, angle, power }) {
@@ -317,12 +369,16 @@ export class Match {
   }
 
   // Free Fire match clock ran out.
+  // Shots already in the air still land; the match ends after the last one.
   finishNow() {
-    if (this.phase === 'play') this.finish([]);
+    this.timeUp = true;
+    if (this.phase === 'play' && !this.pending.size) this.finish([]);
   }
 
   isOver() {
     if (this.phase === 'over') return true;
+    if (this.pending.size) return false;
+    if (this.timeUp) return true;
     if (this.state.mode === 'survival' && this.aliveTeams().size <= 1) return true;
     return !this.players.some((p, i) => this.canPlay(i));
   }
